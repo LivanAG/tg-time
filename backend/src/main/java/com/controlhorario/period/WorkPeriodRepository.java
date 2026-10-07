@@ -22,4 +22,11 @@ public interface WorkPeriodRepository extends JpaRepository<WorkPeriod, UUID> {
             where p.userId = :userId and p.startDate <= :end and p.endDate >= :start
               and (:excludeId is null or p.id <> :excludeId)""")
     boolean existsOverlapping(UUID userId, LocalDate start, LocalDate end, UUID excludeId);
+
+    /** Periodos del usuario que tocan el rango [from, to], por fecha de inicio. */
+    @Query("""
+            select p from WorkPeriod p
+            where p.userId = :userId and p.startDate <= :to and p.endDate >= :from
+            order by p.startDate""")
+    List<WorkPeriod> findOverlapping(UUID userId, LocalDate from, LocalDate to);
 }
