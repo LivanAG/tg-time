@@ -1,0 +1,12 @@
+# SOLO PARA COMPROBAR que la VM responde por http://158.179.220.119 (CADDYFILE=Caddyfile.http).
+# El inicio de sesión NO funciona así: en producción la cookie de sesión es Secure y el navegador
+# la descarta por http (y la contraseña viajaría en claro). Para usar la aplicación, Caddyfile
+# (sslip.io) o Caddyfile.cloudflare.
+:80 {
+	encode zstd gzip
+	header -Server
+	reverse_proxy frontend:8080 {
+		header_up X-Forwarded-For {client_ip}
+		header_down -Server
+	}
+}

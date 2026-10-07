@@ -1,6 +1,6 @@
 # Base común.
 #   Local:      docker compose up --build        (carga también docker-compose.override.yml)
-#   Producción: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d   (o make deploy)
+#   Producción: make deploy (= docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build)
 # Los valores por defecto (:-...) son SOLO para desarrollo local; docker-compose.prod.yml exige los reales.
 name: control-horario
 
@@ -20,7 +20,7 @@ services:
 
   backend:
     build: ./backend
-    image: ${REGISTRY:-local}/control-horario-backend:${TAG:-latest}
+    image: local/control-horario-backend
     environment:
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILE:-dev}
       DB_HOST: db
@@ -42,7 +42,7 @@ services:
 
   frontend:
     build: ./frontend
-    image: ${REGISTRY:-local}/control-horario-frontend:${TAG:-latest}
+    image: local/control-horario-frontend
     depends_on:
       backend: { condition: service_healthy }
     networks: [internal, edge]

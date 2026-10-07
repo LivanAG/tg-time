@@ -1,5 +1,6 @@
 # Secretos y datos locales
 .env
+.env.local-prod
 deploy/certs/
 backups/
 .deployed-tag

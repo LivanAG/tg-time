@@ -1,0 +1,38 @@
+# Dominio detrás de Cloudflare (proxy naranja, SSL/TLS "Full (strict)") con certificado de origen
+# de Cloudflare (CADDYFILE=Caddyfile.cloudflare en .env). DOMAIN viene de .env, p. ej. horas.tudominio.com
+#
+# Certificado: Cloudflare → SSL/TLS → Origin Server → Create Certificate (RSA o ECC, 15 años) y
+# guárdalo en la VM (propietario root, permisos 600; ver docs/DEPLOY.md):
+#   deploy/certs/origin.pem   certificado
+#   deploy/certs/origin.key   clave privada
+#
+# Rangos de Cloudflare: https://www.cloudflare.com/ips/ (revísalos de vez en cuando; cambian poco).
+{
+	servers {
+		# Solo se confía en la IP real que manda Cloudflare (CF-Connecting-IP) si la petición
+		# llega desde un rango de Cloudflare.
+		trusted_proxies static 173.245.48.0/20 103.21.244.0/22 103.22.200.0/22 103.31.4.0/22 141.101.64.0/18 108.162.192.0/18 190.93.240.0/20 188.114.96.0/20 197.234.240.0/22 198.41.128.0/17 162.158.0.0/15 104.16.0.0/13 104.24.0.0/14 172.64.0.0/13 131.0.72.0/22 2400:cb00::/32 2606:4700::/32 2803:f800::/32 2405:b500::/32 2405:8100::/32 2a06:98c0::/29 2c0f:f248::/32
+		trusted_proxies_strict
+		client_ip_headers CF-Connecting-IP
+	}
+}
+
+{$DOMAIN} {
+	tls /etc/caddy/certs/origin.pem /etc/caddy/certs/origin.key
+
+	# El certificado de origen solo lo acepta Cloudflare: se corta cualquier conexión directa a la
+	# IP que intente saltarse Cloudflare (WAF, caché, protección DDoS).
+	@direct not remote_ip 173.245.48.0/20 103.21.244.0/22 103.22.200.0/22 103.31.4.0/22 141.101.64.0/18 108.162.192.0/18 190.93.240.0/20 188.114.96.0/20 197.234.240.0/22 198.41.128.0/17 162.158.0.0/15 104.16.0.0/13 104.24.0.0/14 172.64.0.0/13 131.0.72.0/22 2400:cb00::/32 2606:4700::/32 2803:f800::/32 2405:b500::/32 2405:8100::/32 2a06:98c0::/29 2c0f:f248::/32
+	abort @direct
+
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+	}
+	reverse_proxy frontend:8080 {
+		# {client_ip} = CF-Connecting-IP (IP real del visitante), validada por trusted_proxies.
+		header_up X-Forwarded-For {client_ip}
+		header_down -Server
+	}
+}

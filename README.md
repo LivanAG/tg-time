@@ -58,7 +58,7 @@ Internet ──► Caddy (HTTPS Let's Encrypt, :80/:443)
                ▼
             backend: Spring Boot ──► db: PostgreSQL 16
                                       ▲
-                      backup: pg_dump cifrado con GPG cada 24 h
+                      backup: pg_dump cifrado con GPG cada día
 ```
 
 Frontend y API comparten dominio (`/` y `/api`): no hay CORS y la cookie de refresco es
@@ -70,7 +70,7 @@ Frontend y API comparten dominio (`/` y `/api`): no hay CORS y la cookie de refr
 | Base de datos | PostgreSQL 16 |
 | Frontend | React 18, Vite, TypeScript, React Router, TanStack Query, React Hook Form + Zod, Tailwind CSS, date-fns |
 | Tests | JUnit 5 + AssertJ + Testcontainers + MockMvc · Vitest + Testing Library · Playwright (e2e) |
-| Infra | Docker multi-stage (amd64 + arm64), Docker Compose, Caddy, GHCR, GitHub Actions |
+| Infra | Docker multi-stage (amd64 + arm64), Docker Compose, Caddy, GitHub Actions |
 
 Documentación técnica: [`docs/API.md`](docs/API.md) (contrato de la API) y
 [`docs/EXCEL.md`](docs/EXCEL.md) (formato del Excel para importar y exportar).
@@ -83,73 +83,21 @@ Documentación técnica: [`docs/API.md`](docs/API.md) (contrato de la API) y
 | `docker compose logs -f backend` | Logs de un servicio |
 | `make reset-db` | Borra la base de datos local |
 | `make test-back` / `make test-front` | Tests en contenedores |
-| `make deploy TAG=abc1234` | Despliega (o vuelve atrás) en la VM |
+| `make deploy` / `make update` | Construye y despliega en la VM / copia + `git pull` + redespliegue |
 | `make backup` / `make restore f=backups/<copia>.sql.gpg` | Copia manual / restauración con confirmación |
 
 ## Despliegue en Oracle Cloud
 
-En cada push a `main`, el CI pasa los tests y publica en GHCR las imágenes **amd64 y arm64**, etiquetadas
-con el SHA corto del commit. La VM solo descarga imágenes y ejecuta Docker Compose; Caddy obtiene y renueva
-el certificado HTTPS solo. **No hace falta Cloudflare.**
+Guía completa paso a paso en **[docs/DEPLOY.md](docs/DEPLOY.md)**: prueba previa en local con la
+configuración de producción, subida por git con deploy key, `.env`, build en la VM (arm64), HTTPS
+provisional con sslip.io y final con Cloudflare, actualizaciones, copias y lo que no hay que hacer nunca.
 
-### 1. Crear la VM (una vez)
-
-1. Consola de OCI → **Compute → Instances → Create instance**:
-   - Imagen **Canonical Ubuntu 24.04**.
-   - Shape **VM.Standard.A1.Flex** (Ampere, arm64) con 1-2 OCPU y 6-12 GB (Always Free permite hasta
-     4 OCPU y 24 GB). La **VM.Standard.E2.1.Micro** (AMD, 1 GB) también vale: el script añade swap.
-   - Tu clave SSH pública y una IP pública (mejor **reservada**).
-2. **Abre los puertos en la VCN**: Networking → Virtual Cloud Networks → tu VCN → Security Lists →
-   Default Security List → Add Ingress Rules, origen `0.0.0.0/0`: **TCP 80**, **TCP 443** y, opcional,
-   UDP 443 (HTTP/3).
-3. **Importante:** en cuentas solo Always Free, Oracle puede reclamar instancias con poco uso durante
-   7 días. Pasa la cuenta a **Pay As You Go** (lo que está dentro de Always Free sigue siendo gratis) y
-   pon un presupuesto con alerta en *Billing → Budgets*.
-
-### 2. Dominio
-
-- Con dominio propio: registro `A` (p. ej. `horas.tudominio.com`) hacia la IP de la VM.
-- Sin dominio: usa `horas.<IP-con-guiones>.sslip.io` (p. ej. `horas.129-151-10-20.sslip.io`). Funciona
-  con un certificado válido igual.
-
-### 3. Preparar la VM (una vez)
-
-```bash
-ssh ubuntu@<IP>
-git clone https://github.com/LivanAG/tg-time.git control-horario   # repo privado: usa una deploy key
-cd control-horario
-bash deploy/setup-vps.sh   # Docker + Compose, firewall 80/443, SSH solo con clave, actualizaciones automáticas
-exit                       # vuelve a entrar para usar docker sin sudo
-```
-
-El script abre los puertos también en el firewall interno (iptables) de la imagen de Ubuntu de Oracle.
-No uses `ufw` (Oracle lo desaconseja). En Oracle Linux el equivalente es
-`sudo firewall-cmd --permanent --add-service=http --add-service=https && sudo firewall-cmd --reload`.
-
-### 4. Configurar y desplegar
-
-```bash
-docker login ghcr.io -u <usuario-github>      # token (classic) con read:packages
-cd ~/control-horario
-cp .env.example .env && chmod 600 .env
-nano .env    # DOMAIN, DB_PASSWORD, JWT_SECRET, APP_ADMIN_EMAIL/PASSWORD, BACKUP_PASSPHRASE (openssl rand ...)
-make deploy TAG=<sha corto del commit>         # el que publicó el último CI en main
-```
-
-Abre `https://<DOMAIN>` y entra con el administrador de `.env` (después puedes borrar
-`APP_ADMIN_PASSWORD` del fichero). En producción el backend **no arranca** si `JWT_SECRET` falta, es corto
-o es un valor de ejemplo, y docker compose se niega a arrancar si falta cualquier variable obligatoria.
-
-**Despliegue automático (opcional):** con los secretos `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY` y
-`DEPLOY_KNOWN_HOSTS` (salida de `ssh-keyscan <IP>`) en GitHub, cada push a `main` hace
-`git pull && make deploy TAG=<sha>` por SSH.
-
-**Volver atrás:** `cat deploy-history.log` y `make deploy TAG=<anterior>`. Si la versión nueva cambió el
-esquema de la base de datos, restaura también la copia de antes del despliegue.
+Resumen (en la VM): `cp .env.example .env && chmod 600 .env`, rellenar, `make deploy`. Para actualizar:
+`make update`.
 
 ## Copias de seguridad
 
-- El contenedor `backup` hace un `pg_dump` cifrado con GPG (AES-256) al arrancar y cada 24 h en
+- El contenedor `backup` hace un `pg_dump` cifrado con GPG (AES-256) al arrancar y cada día a las 03:00 en
   `backups/` (permisos 600) y borra las de más de 14 días.
 - `make backup` crea una al momento (hazla antes de desplegar). `make restore f=...` pide confirmación,
   para el backend, restaura y lo vuelve a arrancar.
@@ -172,4 +120,4 @@ esquema de la base de datos, restaura también la copia de antes del despliegue.
 ## CI
 
 `.github/workflows/ci.yml`: tests del backend (unitarios + Testcontainers) y del frontend (tipos, lint,
-tests, build) en cada push y PR; en `main`, imágenes amd64 + arm64 en GHCR y despliegue opcional por SSH.
+tests, build) en cada push y PR. Las imágenes se construyen en la VM (`make deploy`).

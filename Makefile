@@ -1,21 +1,16 @@
 # Atajos. Todo corre en contenedores: no hace falta Java, Maven ni Node en la máquina.
 # Con SPRING_PROFILE=prod en .env (la VM de Oracle) los comandos usan docker-compose.prod.yml.
 PROFILE := $(shell sed -n 's/^SPRING_PROFILE=//p' .env 2>/dev/null)
-REGISTRY ?= $(or $(shell sed -n 's/^REGISTRY=//p' .env 2>/dev/null),local)
-# Último tag desplegado (lo guarda make deploy) para que logs/restart usen las mismas imágenes.
-TAG ?= $(or $(shell cat .deployed-tag 2>/dev/null),latest)
-export REGISTRY TAG
 
-COMPOSE_DEV := docker compose
+COMPOSE_DEV := docker compose -f docker-compose.yml -f docker-compose.override.yml
 COMPOSE_PROD := docker compose -f docker-compose.yml -f docker-compose.prod.yml
 COMPOSE := $(if $(filter prod,$(PROFILE)),$(COMPOSE_PROD),$(COMPOSE_DEV))
 
 MAVEN_IMAGE := maven:3.9-eclipse-temurin-21
 NODE_IMAGE := node:22-alpine
-PLATFORMS := linux/amd64,linux/arm64
 
 .DEFAULT_GOAL := help
-.PHONY: help dev down logs ps reset-db rebuild-backend test-back test-front test build push deploy backup restore
+.PHONY: help dev down logs ps reset-db rebuild-backend test-back test-front test check-prod deploy update backup restore
 
 help: ## Muestra esta ayuda
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -28,7 +23,7 @@ down: ## Para los contenedores (conserva los datos)
 	$(COMPOSE) down
 
 logs: ## Sigue los logs: make logs s=backend
-	$(COMPOSE) logs -f $(s)
+	$(COMPOSE) logs -f --tail=200 $(s)
 
 ps: ## Estado de los contenedores
 	$(COMPOSE) ps
@@ -56,37 +51,40 @@ test-front: ## Typecheck, lint y tests del frontend
 
 test: test-back test-front ## Todos los tests
 
-# ---------- imágenes ----------
-build: ## Imágenes de prod para tu arquitectura: make build TAG=<sha>
-	docker compose -f docker-compose.yml build backend frontend
-
-push: ## Construye amd64+arm64 y publica en el registro (normalmente lo hace el CI)
-	@if [ "$(REGISTRY)" = "local" ]; then echo "Define REGISTRY (p. ej. ghcr.io/usuario)"; exit 1; fi
-	docker buildx build --platform $(PLATFORMS) -t $(REGISTRY)/control-horario-backend:$(TAG) --push backend
-	docker buildx build --platform $(PLATFORMS) -t $(REGISTRY)/control-horario-frontend:$(TAG) --push frontend
-
 # ---------- producción (en la VM) ----------
-deploy: .env ## Despliega o vuelve atrás: make deploy TAG=abc1234
-	@if [ "$(PROFILE)" != "prod" ]; then echo "deploy requiere SPRING_PROFILE=prod en .env"; exit 1; fi
-	@if [ "$(TAG)" = "latest" ]; then echo "Indica la versión: make deploy TAG=<sha del commit>"; exit 1; fi
+check-prod: .env
+	@if [ "$(PROFILE)" != "prod" ]; then echo "Requiere SPRING_PROFILE=prod en .env"; exit 1; fi
+	@if [ "$$(stat -c %a .env)" != "600" ]; then echo "Protege .env: chmod 600 .env"; exit 1; fi
+	@if grep -q '=cambia-esto' .env; then echo "Quedan valores 'cambia-esto' en .env"; exit 1; fi
+
+deploy: check-prod ## Construye las imágenes en la VM y (re)arranca todo
 	mkdir -p backups deploy/certs
-	$(COMPOSE_PROD) pull --ignore-buildable
 	$(COMPOSE_PROD) up -d --build --remove-orphans
-	@echo "$(TAG)" > .deployed-tag
-	@echo "$$(date -Iseconds) $(TAG)" >> deploy-history.log
-	@echo "Desplegado $(TAG). Historial para volver atrás: deploy-history.log"
+	@echo "$$(date -Iseconds) $$(git rev-parse --short HEAD) $$(git log -1 --format=%s)" >> deploy-history.log
+	docker image prune -f
+	@echo "Desplegado $$(git rev-parse --short HEAD). Comprueba con: make ps  /  make logs s=backend"
 
-backup: ## Copia de seguridad manual (cifrada en backups/)
-	$(COMPOSE_PROD) exec backup backup.sh once
+update: check-prod ## Copia de seguridad + git pull + rebuild (sin perder datos)
+	@if [ -n "$$(git status --porcelain --untracked-files=no)" ]; then \
+		echo "Hay cambios locales en ficheros del repositorio (git status). No edites código en la VM."; exit 1; fi
+	@if $(COMPOSE_PROD) ps --status running --services | grep -qx backup; then \
+		$(COMPOSE_PROD) exec -T backup backup.sh once; \
+	else echo "El contenedor backup no está en marcha: se actualiza sin copia previa"; fi
+	git pull --ff-only
+	$(MAKE) deploy
 
-restore: ## Restaura una copia: make restore f=backups/2026-10-07_030000.sql.gpg
-	@test -n "$(f)" || { echo "Uso: make restore f=backups/<copia>.sql.gpg"; exit 1; }
+backup: check-prod ## Copia de seguridad manual (cifrada en backups/)
+	$(COMPOSE_PROD) exec -T backup backup.sh once
+
+restore: check-prod ## Restaura una copia: make restore f=backups/2026-10-07_030000.sql.gpg
+	@test -n "$(f)" || { echo "Uso: make restore f=backups/<copia>.sql.gpg   (copias: ls -lh backups/)"; exit 1; }
 	@test -f "$(f)" || { echo "No existe $(f)"; exit 1; }
 	@printf "Se sustituirán TODOS los datos actuales por %s. Escribe 'restaurar' para continuar: " "$(f)"; \
 		read answer; [ "$$answer" = "restaurar" ] || { echo "Cancelado"; exit 1; }
 	$(COMPOSE_PROD) stop backend
 	$(COMPOSE_PROD) exec -T backup restore.sh /backups/$(notdir $(f)) || { $(COMPOSE_PROD) start backend; exit 1; }
 	$(COMPOSE_PROD) start backend
+	@echo "Restaurado. El backend tarda 1-2 min en estar sano: make ps"
 
 .env:
-	@echo "Falta .env: cópialo con 'cp .env.example .env' y cambia los valores." && exit 1
+	@echo "Falta .env: cp .env.example .env && chmod 600 .env, y cambia los valores (docs/DEPLOY.md)." && exit 1

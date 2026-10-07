@@ -1,5 +1,12 @@
-# Producción en la VM de Oracle Cloud (make deploy TAG=...). Backend y frontend se descargan de GHCR.
+# Producción en la VM de Oracle Cloud (A1.Flex arm64, 1 OCPU, 6 GB). Las imágenes se construyen en la
+# propia VM:  make deploy  (= docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build)
 # Aquí se exigen los valores reales: si falta alguno, docker compose se niega a arrancar.
+#
+# Solo Caddy publica puertos (80/443). db y backend están en la red "internal" (sin salida a internet);
+# frontend (nginx) está en "internal" y "edge" para que Caddy le llegue.
+#
+# Memoria (límites): backend 2304m + db 1g + caddy 256m + backup 256m + frontend 128m ≈ 3,9 GB.
+# Quedan ~2 GB para el sistema, la caché de disco de PostgreSQL y el build de las imágenes.
 x-hardening: &hardening
   restart: unless-stopped
   security_opt: ["no-new-privileges:true"]
@@ -10,19 +17,40 @@ services:
   db:
     <<: *hardening
     cap_add: [CHOWN, SETUID, SETGID, FOWNER, DAC_OVERRIDE]   # mínimo que necesita postgres
+    shm_size: 256m
+    command:
+      - postgres
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - effective_cache_size=1GB
+      - -c
+      - work_mem=8MB
+      - -c
+      - maintenance_work_mem=64MB
     environment:
       POSTGRES_DB: ${DB_NAME:?Define DB_NAME en .env}
       POSTGRES_USER: ${DB_USER:?Define DB_USER en .env}
       POSTGRES_PASSWORD: ${DB_PASSWORD:?Define DB_PASSWORD en .env}
+      TZ: Europe/Madrid
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    deploy: { resources: { limits: { memory: 1g } } }
 
   backend:
     <<: *hardening
-    build: !reset null                       # en prod solo se usan imágenes publicadas
     read_only: true
     tmpfs: [/tmp]
-    deploy: { resources: { limits: { memory: 768m, cpus: "1.0" } } }
     environment:
       SPRING_PROFILES_ACTIVE: prod
+      # Heap fijo y pre-reservado: la VM mantiene >20 % de memoria usada (política de reclamación de
+      # instancias inactivas de Oracle Always Free). El límite del contenedor deja ~800 MB fuera del heap
+      # (metaspace, code cache, hilos, buffers).
+      JAVA_OPTS: ${JAVA_OPTS:--Xms1500m -Xmx1500m -XX:+AlwaysPreTouch -XX:+ExitOnOutOfMemoryError}
       DB_NAME: ${DB_NAME:?Define DB_NAME en .env}
       DB_USER: ${DB_USER:?Define DB_USER en .env}
       DB_PASSWORD: ${DB_PASSWORD:?Define DB_PASSWORD en .env}
@@ -32,12 +60,25 @@ services:
       APP_ADMIN_PASSWORD: ${APP_ADMIN_PASSWORD:-}
       APP_ALLOWED_ORIGINS: https://${DOMAIN:?Define DOMAIN en .env}
       APP_COOKIE_SECURE: "true"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/actuator/health | grep -q UP"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 180s                    # 1 OCPU + pre-touch del heap + migraciones Flyway
+    deploy: { resources: { limits: { memory: 2304m } } }
 
   frontend:
     <<: *hardening
-    build: !reset null
     read_only: true
     tmpfs: [/tmp, /var/cache/nginx]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/ >/dev/null"]   # no localhost: resolvería a ::1
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy: { resources: { limits: { memory: 128m } } }
 
   caddy:
     <<: *hardening
@@ -47,28 +88,51 @@ services:
     environment:
       DOMAIN: ${DOMAIN:?Define DOMAIN en .env}
     volumes:
-      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # CADDYFILE elige la configuración: Caddyfile (HTTPS automático, p. ej. sslip.io),
+      # Caddyfile.cloudflare (dominio tras Cloudflare + certificado de origen) o Caddyfile.http (prueba).
+      - ./deploy/${CADDYFILE:-Caddyfile}:/etc/caddy/Caddyfile:ro
+      - ./deploy/certs:/etc/caddy/certs:ro
       - caddy_data:/data
       - caddy_config:/config
     networks: [edge]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:2019/config/ >/dev/null"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy: { resources: { limits: { memory: 256m } } }
     depends_on:
       frontend: { condition: service_healthy }
 
   backup:
     <<: *hardening
-    build: ./deploy/backup                   # postgres:16-alpine + gnupg; se construye en la VM
+    build: ./deploy/backup                   # postgres:16-alpine + gnupg
     image: local/control-horario-backup
-    cap_add: [CHOWN, SETUID, SETGID, DAC_OVERRIDE]
+    # Con el usuario de la VM: las copias de backups/ se pueden leer y descargar sin sudo.
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    read_only: true
+    tmpfs: [/tmp]
     environment:
+      HOME: /tmp                             # gpg necesita un directorio escribible
       PGHOST: db
       PGDATABASE: ${DB_NAME:?Define DB_NAME en .env}
       PGUSER: ${DB_USER:?Define DB_USER en .env}
       PGPASSWORD: ${DB_PASSWORD:?Define DB_PASSWORD en .env}
       BACKUP_PASSPHRASE: ${BACKUP_PASSPHRASE:?Define BACKUP_PASSPHRASE en .env}
+      BACKUP_TIME: "03:00"
       RETENTION_DAYS: 14
       TZ: Europe/Madrid
     volumes: ["./backups:/backups"]
     networks: [internal]
+    healthcheck:
+      # Sano si hay una copia de menos de 26 h.
+      test: ["CMD-SHELL", "find /backups -name '*.sql.gpg' -mmin -1560 | grep -q ."]
+      interval: 10m
+      timeout: 10s
+      retries: 1
+      start_period: 5m
+    deploy: { resources: { limits: { memory: 256m } } }
     depends_on:
       db: { condition: service_healthy }
 

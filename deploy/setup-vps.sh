@@ -76,8 +76,7 @@ fi
 
 cat <<'EOF'
 
-Listo. Cierra la sesión SSH y vuelve a entrar para usar docker sin sudo. Después:
-  1. docker login ghcr.io -u <usuario-github>     (token con permiso read:packages)
-  2. cd control-horario && cp .env.example .env && chmod 600 .env   (rellena los valores de prod)
-  3. make deploy TAG=<sha-del-commit>
+Listo. Cierra la sesión SSH y vuelve a entrar para usar docker sin sudo. Después sigue docs/DEPLOY.md:
+  1. cd ~/control-horario && cp .env.example .env && chmod 600 .env   (rellena los valores de prod)
+  2. make deploy
 EOF
