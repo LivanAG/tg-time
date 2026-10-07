@@ -6,6 +6,8 @@ import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
 
 public interface HolidayRepository extends JpaRepository<Holiday, UUID> {
 
@@ -14,4 +16,8 @@ public interface HolidayRepository extends JpaRepository<Holiday, UUID> {
     Optional<Holiday> findByIdAndPeriodId(UUID id, UUID periodId);
 
     boolean existsByPeriodIdAndDate(UUID periodId, LocalDate date);
+
+    @Modifying
+    @Query("delete from Holiday h where h.periodId = :periodId")
+    int deleteByPeriodId(UUID periodId);
 }
