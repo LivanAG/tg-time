@@ -4,13 +4,9 @@ import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.LockModeType;
-import jakarta.persistence.OptimisticLockException;
 
 import com.controlhorario.calendar.calc.PeriodRules;
 import com.controlhorario.common.audit.AuditService;
@@ -50,16 +46,14 @@ public class WorkdayService {
     private final PeriodRulesFactory rulesFactory;
     private final WorkdayMapper mapper;
     private final AuditService audit;
-    private final EntityManager entityManager;
 
     public WorkdayService(WorkdayRepository workdays, WorkPeriodRepository periods, PeriodRulesFactory rulesFactory,
-            WorkdayMapper mapper, AuditService audit, EntityManager entityManager) {
+            WorkdayMapper mapper, AuditService audit) {
         this.workdays = workdays;
         this.periods = periods;
         this.rulesFactory = rulesFactory;
         this.mapper = mapper;
         this.audit = audit;
-        this.entityManager = entityManager;
     }
 
     @Transactional(readOnly = true)
@@ -130,7 +124,6 @@ public class WorkdayService {
             workday = new Workday(userId, date);
         }
 
-        Long previousVersion = workday.getVersion();
         boolean breaksChanged = !sameBreaks(workday.getBreaks(), breaks);
         workday.setStartTime(request.startTime());
         workday.setEndTime(request.endTime());
@@ -145,9 +138,6 @@ public class WorkdayService {
                     .toList());
         }
         workdays.saveAndFlush(workday);
-        if (existing.isPresent() && breaksChanged && Objects.equals(previousVersion, workday.getVersion())) {
-            forceVersionIncrement(workday);
-        }
         return toDto(workday, calculator);
     }
 
@@ -175,18 +165,6 @@ public class WorkdayService {
                 .findFirst()
                 .map(p -> new WorkdayCalculator(p.getBreakfastToleranceMin(), p.getMinLunchMin()))
                 .orElseGet(() -> new WorkdayCalculator(DEFAULT_BREAKFAST_TOLERANCE_MIN, DEFAULT_MIN_LUNCH_MIN));
-    }
-
-    /**
-     * Las pausas son una colección inversa (mappedBy) y cambiarlas no sube la versión del día: se
-     * fuerza aquí para que otra pestaña con la versión anterior reciba 409.
-     */
-    private void forceVersionIncrement(Workday workday) {
-        try {
-            entityManager.lock(workday, LockModeType.PESSIMISTIC_FORCE_INCREMENT);
-        } catch (OptimisticLockException e) {
-            throw new ConflictException(VERSION_CHANGED);
-        }
     }
 
     private static boolean sameBreaks(List<WorkdayBreak> current, List<BreakInput> next) {

@@ -40,8 +40,10 @@ Sesión = access token JWT corto (15 min, el frontend lo guarda **solo en memori
 opaco rotativo en cookie `refresh_token` (`HttpOnly; Secure; SameSite=Strict; Path=/api/auth`, 7 días;
 `Secure` se desactiva solo en local con `APP_COOKIE_SECURE=false`).
 
-`/api/auth/login`, `/register` y `/refresh` tienen rate limit (10/min por IP → 429) y comprueban la
-cabecera `Origin` contra `APP_ALLOWED_ORIGINS` (si falta Origin se usa Referer; si faltan ambos → 403).
+`/api/auth/login`, `/register` y `/refresh` tienen rate limit (10/min por IP y endpoint → 429). Esos tres y
+`/logout` comprueban la cabecera `Origin` contra `APP_ALLOWED_ORIGINS` (si falta Origin se usa Referer;
+si faltan ambos → 403). El frontend nunca lanza dos refrescos a la vez, ni entre pestañas (Web Locks):
+reutilizar un refresh token ya rotado revoca la sesión.
 La cabecera `Authorization` se ignora en `/api/auth/*`.
 
 ### `POST /api/auth/login`
@@ -76,7 +78,9 @@ Solo si `APP_REGISTRATION_OPEN=true` (si no, 403 `"El registro está cerrado"`).
 - `GET /api/me` → `UserDto`
 - `PUT /api/me` `{ "name": "...", "company": "..." | null, "timezone": "Europe/Madrid" }` → `UserDto`
 - `PUT /api/me/password` `{ "currentPassword": "...", "newPassword": "..." }` → 204. Revoca **todas**
-  las sesiones (refresh tokens) del usuario: el frontend debe volver a pedir login.
+  las sesiones (refresh tokens) del usuario y borra la cookie: el frontend debe volver a pedir login.
+  Contraseña actual incorrecta → 400 con `errors: [{ "field": "currentPassword", ... }]` (no 401, para no
+  disparar el refresco automático).
 
 ### Administración — `/api/admin` (rol ADMIN)
 - `GET /api/admin/users` → `[UserDto]`

@@ -21,6 +21,7 @@ import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 
+import org.hibernate.annotations.OptimisticLock;
 import org.hibernate.annotations.UuidGenerator;
 
 /** Registro de un día trabajado (una fila de la hoja mensual). */
@@ -61,8 +62,10 @@ public class Workday {
     @Column(length = 500)
     private String notes;
 
+    // Colección inversa: sin excluded = false, cambiar solo las pausas no subiría la versión del día.
     @OneToMany(mappedBy = "workday", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("startTime")
+    @OptimisticLock(excluded = false)
     private List<WorkdayBreak> breaks = new ArrayList<>();
 
     @Version

@@ -130,11 +130,23 @@ export function resetClientState(): void {
  */
 export function refreshSession(): Promise<Session | null> {
   if (!refreshInFlight) {
-    refreshInFlight = doRefresh().finally(() => {
+    refreshInFlight = withCrossTabLock(doRefresh).finally(() => {
       refreshInFlight = null
     })
   }
   return refreshInFlight
+}
+
+/**
+ * Entre pestañas tampoco puede haber dos refrescos a la vez: la segunda espera a que termine la
+ * primera y entonces usa la cookie ya rotada. Sin Web Locks (navegadores antiguos), sin bloqueo.
+ */
+function withCrossTabLock<T>(task: () => Promise<T>): Promise<T> {
+  const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined
+  if (!locks) {
+    return task()
+  }
+  return locks.request('control-horario-auth-refresh', task)
 }
 
 async function doRefresh(): Promise<Session | null> {

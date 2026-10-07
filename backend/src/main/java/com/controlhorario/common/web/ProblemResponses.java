@@ -4,16 +4,21 @@ import java.io.IOException;
 
 import jakarta.servlet.http.HttpServletResponse;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ProblemDetail;
-
-import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.http.converter.json.ProblemDetailJacksonMixin;
 
 /** Escribe un ProblemDetail (RFC 7807) desde filtros, donde no llega el @RestControllerAdvice. */
 public final class ProblemResponses {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    // Mismo formato que los ProblemDetail de los controladores (sin "instance": null ni "properties").
+    private static final ObjectMapper MAPPER = new ObjectMapper()
+            .addMixIn(ProblemDetail.class, ProblemDetailJacksonMixin.class)
+            .setSerializationInclusion(JsonInclude.Include.NON_NULL);
 
     private ProblemResponses() {
     }
