@@ -1,51 +1,60 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen } from '@testing-library/react'
-import { MemoryRouter } from 'react-router'
-import { describe, expect, it, vi } from 'vitest'
+import { screen } from '@testing-library/react'
+import { describe, expect, it } from 'vitest'
 
-import App from './App'
-
-function renderApp(path = '/') {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return render(
-    <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={[path]}>
-        <App />
-      </MemoryRouter>
-    </QueryClientProvider>,
-  )
-}
-
-function stubHealth(response: Response) {
-  const fetchMock = vi.fn(async () => response)
-  vi.stubGlobal('fetch', fetchMock)
-  return fetchMock
-}
+import { authResponse, dashboard } from './test/fixtures'
+import { json, mockApi, problem } from './test/fetchMock'
+import { renderApp } from './test/renderApp'
 
 describe('App', () => {
-  it('muestra la portada y que la API está operativa', async () => {
-    const fetchMock = stubHealth(Response.json({ status: 'UP' }))
+  it('muestra una pantalla de carga mientras recupera la sesión', async () => {
+    let release: () => void = () => undefined
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    mockApi({
+      'POST /api/auth/refresh': async () => {
+        await gate
+        return json(authResponse())
+      },
+      'GET /api/summary/dashboard': dashboard(),
+    })
 
-    renderApp()
+    renderApp('/')
 
-    expect(screen.getByRole('heading', { name: 'Control Horario' })).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('Recuperando la sesión')
+    release()
+    expect(await screen.findByText('Saldo acumulado hasta hoy')).toBeInTheDocument()
+  })
+
+  it('sin sesión lleva a /login y comprueba la API', async () => {
+    const { callsTo } = mockApi({
+      'POST /api/auth/refresh': () => problem(401, 'Sin sesión'),
+      'GET /actuator/health': { status: 'UP' },
+    })
+
+    renderApp('/calendario')
+
+    expect(await screen.findByRole('heading', { name: 'Control Horario' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Entrar' })).toBeInTheDocument()
     expect(await screen.findByText('API operativa')).toBeInTheDocument()
-    expect(fetchMock).toHaveBeenCalledWith('/actuator/health', expect.anything())
+    expect(callsTo('POST', '/api/auth/refresh')).toHaveLength(1)
   })
 
-  it('avisa si la API no responde', async () => {
-    stubHealth(new Response(null, { status: 502 }))
-
-    renderApp()
-
-    expect(await screen.findByText('API no disponible')).toBeInTheDocument()
-  })
-
-  it('muestra una página de no encontrado para rutas desconocidas', () => {
-    stubHealth(Response.json({ status: 'UP' }))
+  it('muestra una página de no encontrado para rutas desconocidas', async () => {
+    mockApi({ 'POST /api/auth/refresh': json(authResponse()) })
 
     renderApp('/no-existe')
 
-    expect(screen.getByRole('heading', { name: 'Página no encontrada' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Página no encontrada' })).toBeInTheDocument()
+  })
+
+  it('la navegación principal enlaza las cinco pantallas', async () => {
+    mockApi({ 'POST /api/auth/refresh': json(authResponse()), 'GET /api/summary/dashboard': dashboard() })
+
+    renderApp('/')
+
+    const nav = await screen.findByRole('navigation', { name: 'Principal' })
+    const links = Array.from(nav.querySelectorAll('a')).map((a) => a.textContent)
+    expect(links).toEqual(['Inicio', 'Registro', 'Calendario', 'Resumen', 'Ajustes'])
   })
 })
