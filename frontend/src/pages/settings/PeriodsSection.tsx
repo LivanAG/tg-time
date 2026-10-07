@@ -128,9 +128,7 @@ export function PeriodsSection() {
                 </div>
                 <div>
                   <dt className="inline text-slate-500">Teletrabajo: </dt>
-                  <dd className="inline">
-                    {period.maxRemotePct} % · {period.maxRemoteDaysMonth} días/mes
-                  </dd>
+                  <dd className="inline">máx. {period.maxRemotePct} %</dd>
                 </div>
                 <div className="col-span-2 sm:col-span-4">
                   <dt className="inline text-slate-500">Intensiva: </dt>
@@ -320,12 +318,6 @@ function PeriodFormDialog({ editing, periods, onClose, onSaved }: PeriodFormDial
             inputMode="numeric"
             error={errors.maxRemotePct?.message}
             {...register('maxRemotePct')}
-          />
-          <TextField
-            label="Días máximos de teletrabajo al mes"
-            inputMode="numeric"
-            error={errors.maxRemoteDaysMonth?.message}
-            {...register('maxRemoteDaysMonth')}
           />
         </fieldset>
 

@@ -9,7 +9,7 @@ import { Duration } from '../../components/Duration'
 import { formatDayMonth, formatDayShort, todayIso } from '../../lib/dates'
 import { LOCATION_LABELS } from '../../lib/format'
 import { apiFieldToPath } from '../../lib/formErrors'
-import { durationInputValue, formatMinutes, normalizeTime, parseDuration, TIME_PATTERN } from '../../lib/time'
+import { formatMinutes, normalizeTime, TIME_PATTERN } from '../../lib/time'
 import { liveCalculation, validateWorkday, type CalcRules } from '../../lib/workdayCalc'
 import { breaksSummary, dayLabel, dayTone, groupByWeek, isInlineEditable } from './dayInfo'
 
@@ -20,7 +20,7 @@ interface MonthTableProps {
   onNotice: (message: string) => void
 }
 
-const COLUMNS = 11
+const COLUMNS = 9
 
 /** Hoja mensual como el Excel: semanas con subtotal y edición en línea guardada al salir de la fila. */
 export function MonthTable({ summary, rules, onOpenDay, onNotice }: MonthTableProps) {
@@ -29,7 +29,7 @@ export function MonthTable({ summary, rules, onOpenDay, onNotice }: MonthTablePr
 
   return (
     <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-      <table className="w-full min-w-[960px] border-collapse text-sm">
+      <table className="w-full min-w-[820px] border-collapse text-sm">
         <caption className="sr-only">Registro diario del mes por semanas</caption>
         <thead className="bg-slate-100 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
           <tr>
@@ -53,12 +53,6 @@ export function MonthTable({ summary, rules, onOpenDay, onNotice }: MonthTablePr
             </th>
             <th scope="col" className="px-2 py-2">
               Ubicación
-            </th>
-            <th scope="col" className="px-2 py-2">
-              JIRA
-            </th>
-            <th scope="col" className="px-2 py-2">
-              IZERTIA
             </th>
             <th scope="col" className="px-2 py-2">
               Check
@@ -151,8 +145,6 @@ interface Draft {
   startTime: string
   endTime: string
   location: WorkLocation
-  jira: string
-  izertia: string
 }
 
 function draftOf(day: DayDto): Draft {
@@ -161,24 +153,16 @@ function draftOf(day: DayDto): Draft {
     startTime: w?.startTime ?? '',
     endTime: w?.endTime ?? '',
     location: w?.location ?? 'OFICINA',
-    jira: durationInputValue(w?.jiraMinutes),
-    izertia: durationInputValue(w?.izertiaMinutes),
   }
 }
 
 function sameDraft(a: Draft, b: Draft): boolean {
-  return (
-    a.startTime === b.startTime &&
-    a.endTime === b.endTime &&
-    a.location === b.location &&
-    a.jira.trim() === b.jira.trim() &&
-    a.izertia.trim() === b.izertia.trim()
-  )
+  return a.startTime === b.startTime && a.endTime === b.endTime && a.location === b.location
 }
 
-type FieldErrors = Partial<Record<'startTime' | 'endTime' | 'location' | 'jiraMinutes' | 'izertiaMinutes', string>>
+type FieldErrors = Partial<Record<'startTime' | 'endTime' | 'location', string>>
 
-const INLINE_FIELDS = ['startTime', 'endTime', 'location', 'jiraMinutes', 'izertiaMinutes'] as const
+const INLINE_FIELDS = ['startTime', 'endTime', 'location'] as const
 
 function isInlineField(field: string): field is (typeof INLINE_FIELDS)[number] {
   return (INLINE_FIELDS as readonly string[]).includes(field)
@@ -263,14 +247,6 @@ function EditableDayRow({ day, rules, isToday, onOpenDay, onNotice }: EditableDa
     if (draft.endTime && !TIME_PATTERN.test(draft.endTime)) {
       fields.endTime = 'Hora no válida (HH:mm)'
     }
-    const jira = parseDuration(draft.jira)
-    const izertia = parseDuration(draft.izertia)
-    if (draft.jira.trim() !== '' && (jira === null || jira < 0)) {
-      fields.jiraMinutes = 'Duración no válida (h:mm)'
-    }
-    if (draft.izertia.trim() !== '' && (izertia === null || izertia < 0)) {
-      fields.izertiaMinutes = 'Duración no válida (h:mm)'
-    }
     if (!fields.startTime && !fields.endTime) {
       for (const issue of validateWorkday(calcInput, rules)) {
         if (issue.field && isInlineField(issue.field)) {
@@ -293,8 +269,6 @@ function EditableDayRow({ day, rules, isToday, onOpenDay, onNotice }: EditableDa
         breaks: workday?.breaks ?? [],
         location: draft.location,
         remoteMinutes: draft.location === 'MIXTO' ? (workday?.remoteMinutes ?? null) : null,
-        jiraMinutes: jira,
-        izertiaMinutes: izertia,
         notes: workday?.notes ?? null,
         version: savedRef.current?.version ?? workday?.version ?? null,
       },
@@ -396,34 +370,6 @@ function EditableDayRow({ day, rules, isToday, onOpenDay, onNotice }: EditableDa
               </option>
             ))}
           </select>
-        </td>
-        <td className="px-2 py-1.5">
-          <input
-            type="text"
-            inputMode="text"
-            placeholder="h:mm"
-            autoComplete="off"
-            aria-label={`JIRA del ${label}`}
-            aria-invalid={fieldErrors.jiraMinutes ? true : undefined}
-            value={draft.jira}
-            onChange={(e) => set({ jira: e.target.value })}
-            onKeyDown={onKeyDown}
-            className={`${inputClass(fieldErrors.jiraMinutes)} w-16`}
-          />
-        </td>
-        <td className="px-2 py-1.5">
-          <input
-            type="text"
-            inputMode="text"
-            placeholder="h:mm"
-            autoComplete="off"
-            aria-label={`IZERTIA del ${label}`}
-            aria-invalid={fieldErrors.izertiaMinutes ? true : undefined}
-            value={draft.izertia}
-            onChange={(e) => set({ izertia: e.target.value })}
-            onKeyDown={onKeyDown}
-            className={`${inputClass(fieldErrors.izertiaMinutes)} w-16`}
-          />
         </td>
         <td className="px-2 py-1.5">
           {save.isPending ? (

@@ -29,11 +29,7 @@ export interface ProblemDetail {
 export type IssueCode =
   | 'LUNCH_BELOW_MINIMUM'
   | 'MISSING_RECORD'
-  | 'JIRA_IZERTIA_MISMATCH'
-  | 'JIRA_ROUNDED_MISMATCH'
-  | 'IZERTIA_ROUNDED_MISMATCH'
   | 'REMOTE_PCT_EXCEEDED'
-  | 'REMOTE_DAYS_EXCEEDED'
   | 'VACATION_OVERPLANNED'
 
 export interface IssueDto {
@@ -118,7 +114,6 @@ export interface PeriodDto {
   minLunchMin: number
   roundingStepMin: number
   maxRemotePct: number
-  maxRemoteDaysMonth: number
   openingBalanceMin: number
   intensiveRanges: IntensiveRangeDto[]
   version: number
@@ -187,8 +182,6 @@ export interface WorkdayDto {
   breaks: BreakDto[]
   location: WorkLocation
   remoteMinutes: number | null
-  jiraMinutes: number | null
-  izertiaMinutes: number | null
   notes: string | null
   version: number
   totals: WorkdayTotalsDto
@@ -202,8 +195,6 @@ export interface WorkdayRequest {
   breaks: BreakDto[]
   location: WorkLocation
   remoteMinutes: number | null
-  jiraMinutes: number | null
-  izertiaMinutes: number | null
   notes: string | null
   version: number | null
 }
@@ -284,10 +275,6 @@ export interface MonthSummaryDto {
   remotePct: number
   remoteDays: number
   maxRemotePct: number
-  maxRemoteDaysMonth: number
-  jiraMinutes: number | null
-  izertiaMinutes: number | null
-  imputationWarningDays: number
   warnings: IssueDto[]
   weeks: WeekSummaryDto[]
   days: DayDto[]
@@ -367,8 +354,6 @@ export interface DashboardMonthDto {
   remotePct: number
   remoteDays: number
   maxRemotePct: number
-  maxRemoteDaysMonth: number
-  imputationWarningDays: number
   warnings: IssueDto[]
 }
 
@@ -413,8 +398,6 @@ export interface ImportWorkdayDto {
   breaks: BreakDto[]
   location: WorkLocation | null
   remoteMinutes: number | null
-  jiraMinutes: number | null
-  izertiaMinutes: number | null
   notes: string | null
 }
 
@@ -441,7 +424,6 @@ export interface DetectedSettingsDto {
   breakfastToleranceMin: number | null
   minLunchMin: number | null
   maxRemotePct: number | null
-  maxRemoteDaysMonth: number | null
   normalDayMinutes: number | null
   intensiveDayMinutes: number | null
   vacationDays: number | null
@@ -477,7 +459,6 @@ export interface ImportOptions {
   dryRun: boolean
   periodId: string | null
   includeFuture: boolean
-  includeImputations: boolean
   markVacations: boolean
   overwrite: boolean
 }

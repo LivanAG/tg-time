@@ -105,7 +105,6 @@ public abstract class DomainApiTestSupport {
         body.put("minLunchMin", 30);
         body.put("roundingStepMin", 15);
         body.put("maxRemotePct", 50);
-        body.put("maxRemoteDaysMonth", 8);
         body.put("openingBalanceMin", 0);
         body.put("intensiveRanges", List.of(Map.of("startDate", "2026-06-15", "endDate", "2026-09-15")));
         body.put("preloadHolidays", true);
@@ -149,8 +148,6 @@ public abstract class DomainApiTestSupport {
         body.put("breaks", breaks);
         body.put("location", input.location().name());
         body.put("remoteMinutes", input.remoteMinutes());
-        body.put("jiraMinutes", input.jiraMinutes());
-        body.put("izertiaMinutes", input.izertiaMinutes());
         body.put("notes", null);
         body.put("version", version);
         return body;
@@ -166,8 +163,6 @@ public abstract class DomainApiTestSupport {
                 Map.of("type", "COMIDA", "startTime", "15:02", "endTime", "15:32")));
         body.put("location", "OFICINA");
         body.put("remoteMinutes", null);
-        body.put("jiraMinutes", 660);
-        body.put("izertiaMinutes", 660);
         body.put("notes", null);
         body.put("version", null);
         return body;

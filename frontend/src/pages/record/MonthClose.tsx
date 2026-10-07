@@ -15,7 +15,6 @@ function differenceLabel(minutes: number): string {
 /** Cierre del mes (pie de la hoja mensual del Excel), con saldos con signo. */
 export function MonthClose({ summary }: { summary: MonthSummaryDto }) {
   const remotePctExceeded = summary.remotePct > summary.maxRemotePct
-  const remoteDaysExceeded = summary.remoteDays > summary.maxRemoteDaysMonth
 
   return (
     <Card title="Cierre del mes" titleId="month-close">
@@ -72,24 +71,14 @@ export function MonthClose({ summary }: { summary: MonthSummaryDto }) {
           <Stat label="Teletrabajo" hint={`Máximo ${formatPct(summary.maxRemotePct)}`}>
             <span className={remotePctExceeded ? 'text-red-600' : ''}>{formatPct(summary.remotePct)}</span>
           </Stat>
-          <Stat label="Días en casa" hint={`Máximo ${summary.maxRemoteDaysMonth} al mes`}>
-            <span className={remoteDaysExceeded ? 'text-red-600' : ''}>{summary.remoteDays}</span>
+          <Stat label="Días en casa" hint="Casa o mixto">
+            {summary.remoteDays}
           </Stat>
           <Stat label="En casa">
             <Duration minutes={summary.remoteMinutes} signed={false} />
           </Stat>
           <Stat label="En oficina">
             <Duration minutes={summary.officeMinutes} signed={false} />
-          </Stat>
-        </dl>
-
-        <dl className="grid grid-cols-3 gap-4">
-          <Stat label="JIRA">{formatOptionalMinutes(summary.jiraMinutes)}</Stat>
-          <Stat label="IZERTIA">{formatOptionalMinutes(summary.izertiaMinutes)}</Stat>
-          <Stat label="Días con avisos de imputación">
-            <span className={summary.imputationWarningDays > 0 ? 'text-amber-700' : ''}>
-              {summary.imputationWarningDays}
-            </span>
           </Stat>
         </dl>
 

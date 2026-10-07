@@ -38,7 +38,7 @@ interface WorkdayEditorProps {
   onClose: () => void
 }
 
-/** Editor completo de un día (modal): horas, pausas, ubicación, imputaciones y notas con total en vivo. */
+/** Editor completo de un día (modal): horas, pausas, ubicación y notas con total en vivo. */
 export function WorkdayEditor({ date, onClose }: WorkdayEditorProps) {
   const queryClient = useQueryClient()
   const periodsQuery = usePeriods()
@@ -305,24 +305,6 @@ function WorkdayForm({ date, workday, absence, rules, hasPeriod, notice, onConfl
         {location !== 'MIXTO' && errors.remoteMinutes?.message && (
           <p className="text-sm text-red-700">{errors.remoteMinutes.message}</p>
         )}
-      </fieldset>
-
-      <fieldset className="grid grid-cols-2 gap-3">
-        <legend className="col-span-2 mb-2 text-sm font-semibold text-slate-800">Imputaciones</legend>
-        <TextField
-          label="JIRA (h:mm)"
-          placeholder="8:00"
-          autoComplete="off"
-          error={errors.jiraMinutes?.message}
-          {...register('jiraMinutes')}
-        />
-        <TextField
-          label="IZERTIA (h:mm)"
-          placeholder="8:00"
-          autoComplete="off"
-          error={errors.izertiaMinutes?.message}
-          {...register('izertiaMinutes')}
-        />
       </fieldset>
 
       <TextAreaField

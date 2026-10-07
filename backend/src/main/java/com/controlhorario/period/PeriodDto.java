@@ -18,7 +18,6 @@ public record PeriodDto(
         int minLunchMin,
         int roundingStepMin,
         int maxRemotePct,
-        int maxRemoteDaysMonth,
         int openingBalanceMin,
         List<IntensiveRangeDto> intensiveRanges,
         Long version) {

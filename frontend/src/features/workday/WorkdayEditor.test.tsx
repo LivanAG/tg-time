@@ -85,7 +85,6 @@ describe('Editor de día', () => {
     setTime('Inicio de la pausa 1', '13:00')
     setTime('Fin de la pausa 1', '13:30')
     fireEvent.click(screen.getByRole('radio', { name: 'Casa' }))
-    fireEvent.change(screen.getByLabelText('JIRA (h:mm)'), { target: { value: '7:30' } })
     fireEvent.change(screen.getByLabelText('Notas'), { target: { value: '  Reunión con cliente  ' } })
     fireEvent.click(screen.getByRole('button', { name: 'Guardar' }))
 
@@ -105,8 +104,6 @@ describe('Editor de día', () => {
       breaks: [{ type: 'COMIDA', startTime: '13:00', endTime: '13:30' }],
       location: 'CASA',
       remoteMinutes: null,
-      jiraMinutes: 450,
-      izertiaMinutes: null,
       notes: 'Reunión con cliente',
       version: null,
     })
@@ -119,16 +116,19 @@ describe('Editor de día', () => {
     setTime('Entrada', '17:00')
     setTime('Salida', '08:00')
     fireEvent.click(screen.getByRole('radio', { name: 'Mixto' }))
-    fireEvent.change(screen.getByLabelText('IZERTIA (h:mm)'), { target: { value: '7,5' } })
+    fireEvent.change(screen.getByLabelText('Tiempo en casa (h:mm)'), { target: { value: '7,5' } })
     fireEvent.click(screen.getByRole('button', { name: 'Guardar' }))
 
+    expect(await screen.findByText('Duración no válida (h:mm)')).toBeInTheDocument()
+    expect(callsTo('PUT', `/api/workdays/${DATE}`)).toHaveLength(0)
+
+    fireEvent.change(screen.getByLabelText('Tiempo en casa (h:mm)'), { target: { value: '' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar' }))
     expect(await screen.findByText('La salida debe ser posterior a la entrada')).toBeInTheDocument()
-    expect(screen.getByText('Duración no válida (h:mm)')).toBeInTheDocument()
     expect(callsTo('PUT', `/api/workdays/${DATE}`)).toHaveLength(0)
 
     setTime('Entrada', '08:00')
     setTime('Salida', '16:00')
-    fireEvent.change(screen.getByLabelText('IZERTIA (h:mm)'), { target: { value: '' } })
     fireEvent.click(screen.getByRole('button', { name: 'Guardar' }))
     expect(await screen.findByText('Indica cuántos minutos has trabajado en casa')).toBeInTheDocument()
     expect(callsTo('PUT', `/api/workdays/${DATE}`)).toHaveLength(0)
@@ -153,7 +153,6 @@ describe('Editor de día', () => {
     expect(callsTo('PUT', `/api/workdays/${DATE}`)[0].body).toMatchObject({
       endTime: '18:29',
       version: 3,
-      jiraMinutes: 600,
     })
   })
 

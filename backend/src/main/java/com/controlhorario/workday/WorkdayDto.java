@@ -19,8 +19,6 @@ public record WorkdayDto(
         List<BreakDto> breaks,
         Location location,
         Integer remoteMinutes,
-        Integer jiraMinutes,
-        Integer izertiaMinutes,
         String notes,
         Long version,
         WorkdayTotalsDto totals,

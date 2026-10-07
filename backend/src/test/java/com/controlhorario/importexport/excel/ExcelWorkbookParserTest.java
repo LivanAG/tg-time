@@ -93,8 +93,6 @@ class ExcelWorkbookParserTest {
             assertThat(day.remoteMinutes()).as(name).isNull();
             assertThat(day.excelWorkedMinutes()).as(name).isEqualTo(row.excelWorkedMinutes());
             assertThat(day.representable()).as(name).isEqualTo(row.representable());
-            assertThat(day.jiraMinutes()).as(name).isEqualTo(minutes(row, "jira"));
-            assertThat(day.izertiaMinutes()).as(name).isEqualTo(minutes(row, "izertia"));
             assertThat(day.errors()).as(name).isEmpty();
         }
     }
@@ -107,7 +105,7 @@ class ExcelWorkbookParserTest {
         assertThat(representable).hasSize(222);
         for (ParsedDay day : representable) {
             WorkdayInput input = new WorkdayInput(day.date(), day.startTime(), day.endTime(), day.breaks(),
-                    day.location(), day.remoteMinutes(), null, null);
+                    day.location(), day.remoteMinutes());
             assertThat(calculator.validate(input)).as(day.date().toString()).isEmpty();
             assertThat(calculator.calculate(input).workedMinutes()).as(day.date().toString())
                     .isEqualTo(day.excelWorkedMinutes());
@@ -131,16 +129,6 @@ class ExcelWorkbookParserTest {
 
     @Test
     void detectsThePeriodSettingsFromTheHeadersAndTheHorasSheet() {
-        assertThat(parsed.settings()).isEqualTo(new DetectedSettings(20, 30, 50, 8, 480, 420, 23, 105_600));
-    }
-
-    @Test
-    void detectsJiraAndIzertiaCopiedFromTheTemplateInEverySheet() {
-        assertThat(parsed.inheritedImputationSheets()).hasSize(13).first().isEqualTo("Mayo 26");
-    }
-
-    private static Integer minutes(ExcelFixture.Row row, String column) {
-        String value = row.cells().get(column);
-        return value == null || value.isEmpty() ? null : Integer.valueOf(value);
+        assertThat(parsed.settings()).isEqualTo(new DetectedSettings(20, 30, 50, 480, 420, 23, 105_600));
     }
 }

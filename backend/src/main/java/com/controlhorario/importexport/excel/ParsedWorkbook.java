@@ -11,19 +11,16 @@ import com.controlhorario.calendar.calc.PeriodCalendar;
  * Resultado de leer el Excel, sin consultar la base de datos.
  *
  * @param sheets                    hojas mensuales en el orden del fichero
- * @param warnings                  avisos generales (fechas corregidas...)
- * @param inheritedImputationSheets hojas cuyas columnas JIRA/IZERTIA parecen copiadas de otra hoja
+ * @param warnings avisos generales (fechas corregidas...)
  */
 public record ParsedWorkbook(
         List<ParsedSheet> sheets,
         DetectedSettings settings,
-        List<String> warnings,
-        List<String> inheritedImputationSheets) {
+        List<String> warnings) {
 
     public ParsedWorkbook {
         sheets = List.copyOf(sheets);
         warnings = List.copyOf(warnings);
-        inheritedImputationSheets = List.copyOf(inheritedImputationSheets);
     }
 
     public List<ParsedDay> days() {

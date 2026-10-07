@@ -17,9 +17,7 @@ import com.controlhorario.common.calc.CalcIssue;
  * @param openingBalanceMinutes   saldo acumulado al empezar el mes
  * @param closingBalanceMinutes   apertura + diferencia - puentes recuperables
  * @param remotePct               minutos en casa / trabajado * 100
- * @param remoteDays              días con ubicación CASA o MIXTO
- * @param jiraMinutes             suma de imputaciones JIRA (null si no hay ninguna)
- * @param izertiaMinutes          suma de imputaciones IZERTIA (null si no hay ninguna)
+ * @param remoteDays              días con ubicación CASA o MIXTO (informativo: el límite es solo el %)
  */
 public record MonthSummary(
         YearMonth month,
@@ -45,9 +43,6 @@ public record MonthSummary(
         int officeMinutes,
         double remotePct,
         int remoteDays,
-        Integer jiraMinutes,
-        Integer izertiaMinutes,
-        int imputationWarningDays,
         List<CalcIssue> warnings,
         List<WeekSummary> weeks,
         List<DaySummary> days) {

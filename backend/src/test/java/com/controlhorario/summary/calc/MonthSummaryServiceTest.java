@@ -88,7 +88,9 @@ class MonthSummaryServiceTest {
         assertThat(june.remoteMinutes()).isEqualTo(homeMinutes);
         assertThat(june.officeMinutes()).isEqualTo(june.workedMinutes() - homeMinutes);
         assertThat(june.remoteDays()).isEqualTo(10);
-        assertThat(june.warnings()).extracting(CalcIssue::code).contains(MonthSummaryService.REMOTE_DAYS_EXCEEDED);
+        // 10 días en casa no generan aviso: el límite es solo el porcentaje.
+        assertThat(june.remotePct()).isLessThanOrEqualTo(50);
+        assertThat(june.warnings()).isEmpty();
     }
 
     @Test
@@ -124,19 +126,14 @@ class MonthSummaryServiceTest {
     }
 
     @Test
-    void imputationWarningsCompareJiraIzertiaAndRounded() {
+    void remotePercentageAboveTheLimitIsWarned() {
         LocalDate date = LocalDate.of(2026, 6, 1);
-        WorkdayInput day = new WorkdayInput(date, LocalTime.of(8, 0), LocalTime.of(15, 0), List.of(),
-                Location.OFICINA, null, 7 * 60, 6 * 60);
-        MonthSummary june = service.summarize(calendar, YearMonth.of(2026, 6), List.of(day), List.of(), 0,
+        WorkdayInput home = new WorkdayInput(date, LocalTime.of(8, 0), LocalTime.of(15, 0), List.of(),
+                Location.CASA, null);
+        MonthSummary june = service.summarize(calendar, YearMonth.of(2026, 6), List.of(home), List.of(), 0,
                 ExcelFixture.TODAY);
-        DaySummary first = june.days().get(0);
-        assertThat(first.roundedMinutes()).isEqualTo(7 * 60);
-        assertThat(first.warnings()).extracting(CalcIssue::code)
-                .containsExactly(MonthSummaryService.JIRA_IZERTIA_MISMATCH, MonthSummaryService.IZERTIA_ROUNDED_MISMATCH);
-        assertThat(june.imputationWarningDays()).isEqualTo(1);
-        assertThat(june.jiraMinutes()).isEqualTo(420);
-        assertThat(june.izertiaMinutes()).isEqualTo(360);
+        assertThat(june.remotePct()).isEqualTo(100.0);
+        assertThat(june.warnings()).extracting(CalcIssue::code).containsExactly(MonthSummaryService.REMOTE_PCT_EXCEEDED);
     }
 
     @Test

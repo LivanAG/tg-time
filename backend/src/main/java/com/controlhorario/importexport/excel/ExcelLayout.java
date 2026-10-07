@@ -42,8 +42,6 @@ public final class ExcelLayout {
     public static final int COL_REMOTE_START = 13;      // N
     public static final int COL_REMOTE_END = 14;        // O
     public static final int COL_ROUNDED = 15;           // P
-    public static final int COL_JIRA = 21;              // V
-    public static final int COL_IZERTIA = 28;           // AC
 
     private static final List<Integer> DATA_ROWS;
 

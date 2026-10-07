@@ -14,8 +14,6 @@ import com.controlhorario.workday.calc.BreakInput;
  * @param row                número de fila en Excel (base 1)
  * @param breaks             pausas leídas de C/D, E/F y G/H (con la regla especial de la comida ya aplicada)
  * @param remoteMinutes      O - N, solo con ubicación MIXTO
- * @param jiraMinutes        columna V (se importa solo si se piden las imputaciones)
- * @param izertiaMinutes     columna AC (ídem)
  * @param excelWorkedMinutes Total Día (columna L), para comparar con el cálculo
  * @param representable      false si la comida está escrita a mano (J) sin horas y no se puede deducir
  * @param errors             problemas que impiden importar el día (celdas ilegibles, pausas incompletas)
@@ -30,8 +28,6 @@ public record ParsedDay(
         List<BreakInput> breaks,
         Location location,
         Integer remoteMinutes,
-        Integer jiraMinutes,
-        Integer izertiaMinutes,
         Integer excelWorkedMinutes,
         boolean representable,
         List<String> errors,

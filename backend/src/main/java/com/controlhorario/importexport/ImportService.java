@@ -161,7 +161,7 @@ public class ImportService {
 
         List<AbsencePlan> vacations = planVacations(parsed, calendar, options, today, seen.keySet(),
                 existingWorkdays, existingAbsences);
-        return new Plan(period, parsed, options, List.copyOf(days), vacations, warnings(parsed, period, options, days));
+        return new Plan(period, parsed, options, List.copyOf(days), vacations, warnings(parsed, period, days));
     }
 
     /** Periodo elegido o, por defecto, el del usuario que contiene más fechas del fichero (empate: el más reciente). */
@@ -197,9 +197,7 @@ public class ImportService {
             errors.add("Fecha repetida: ya aparece en la hoja «" + duplicateOf.sheet() + "», fila " + duplicateOf.row());
         }
         WorkdayInput input = new WorkdayInput(day.date(), day.startTime(), day.endTime(), day.breaks(),
-                day.location(), day.location() == Location.MIXTO ? day.remoteMinutes() : null,
-                options.includeImputations() ? day.jiraMinutes() : null,
-                options.includeImputations() ? day.izertiaMinutes() : null);
+                day.location(), day.location() == Location.MIXTO ? day.remoteMinutes() : null);
 
         Integer computed = null;
         if (day.representable()) {
@@ -282,14 +280,8 @@ public class ImportService {
         return List.copyOf(plans);
     }
 
-    private static List<String> warnings(ParsedWorkbook parsed, WorkPeriod period, ImportOptions options,
-            List<DayPlan> days) {
+    private static List<String> warnings(ParsedWorkbook parsed, WorkPeriod period, List<DayPlan> days) {
         List<String> warnings = new ArrayList<>(parsed.warnings());
-        if (!parsed.inheritedImputationSheets().isEmpty()) {
-            String sheets = String.join(", ", parsed.inheritedImputationSheets());
-            warnings.add("Las columnas JIRA/IZERTIA parecen copiadas de la plantilla (hojas: " + sheets + "): "
-                    + (options.includeImputations() ? "revisa las imputaciones importadas" : "no se importan"));
-        }
         long outOfPeriod = days.stream().filter(d -> d.status() == ImportDayStatus.OUT_OF_PERIOD).count();
         if (outOfPeriod > 0) {
             warnings.add(outOfPeriod + (outOfPeriod == 1 ? " día con fichaje queda" : " días con fichaje quedan")
@@ -317,11 +309,6 @@ public class ImportService {
             workday.setEndTime(input.end());
             workday.setLocation(input.location());
             workday.setRemoteMinutes(input.location() == Location.MIXTO ? input.remoteMinutes() : null);
-            // Sin includeImputations el Excel no aporta JIRA/IZERTIA: se conservan los que hubiera.
-            if (plan.options().includeImputations()) {
-                workday.setJiraMinutes(input.jiraMinutes());
-                workday.setIzertiaMinutes(input.izertiaMinutes());
-            }
             workday.replaceBreaks(input.breaks().stream()
                     .map(b -> new WorkdayBreak(b.type(), b.start(), b.end()))
                     .toList());
@@ -391,6 +378,6 @@ public class ImportService {
     private ImportWorkdayDto workdayDto(WorkdayInput input) {
         return new ImportWorkdayDto(input.start(), input.end(),
                 input.breaks().stream().map(mapper::toDto).toList(), input.location(),
-                input.remoteMinutes(), input.jiraMinutes(), input.izertiaMinutes(), null);
+                input.remoteMinutes(), null);
     }
 }

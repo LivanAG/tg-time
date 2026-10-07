@@ -59,9 +59,6 @@ public class WorkPeriod {
     @Column(name = "max_remote_pct", nullable = false)
     private int maxRemotePct;
 
-    @Column(name = "max_remote_days_month", nullable = false)
-    private int maxRemoteDaysMonth;
-
     @Column(name = "opening_balance_min", nullable = false)
     private int openingBalanceMin;
 
@@ -100,8 +97,6 @@ public class WorkPeriod {
     public void setRoundingStepMin(int roundingStepMin) { this.roundingStepMin = roundingStepMin; }
     public int getMaxRemotePct() { return maxRemotePct; }
     public void setMaxRemotePct(int maxRemotePct) { this.maxRemotePct = maxRemotePct; }
-    public int getMaxRemoteDaysMonth() { return maxRemoteDaysMonth; }
-    public void setMaxRemoteDaysMonth(int maxRemoteDaysMonth) { this.maxRemoteDaysMonth = maxRemoteDaysMonth; }
     public int getOpeningBalanceMin() { return openingBalanceMin; }
     public void setOpeningBalanceMin(int openingBalanceMin) { this.openingBalanceMin = openingBalanceMin; }
     public Long getVersion() { return version; }

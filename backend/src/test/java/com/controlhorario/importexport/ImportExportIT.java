@@ -122,7 +122,6 @@ class ImportExportIT {
                 .andExpect(jsonPath("$.days[?(@.date == '2026-05-26')].workday.breaks[1].endTime").value("15:32")));
 
         assertThat(result.periodId()).isEqualTo(period.getId());
-        assertThat(day(result, MAY_26).workday().jiraMinutes()).isNull();
         assertThat(result.sheets()).hasSize(13);
         assertThat(result.sheets()).filteredOn(s -> s.dateCorrections() > 0)
                 .extracting(ImportSheetDto::name, ImportSheetDto::dateCorrections)
@@ -164,9 +163,8 @@ class ImportExportIT {
                 && a.action() == ImportAction.IMPORT);
 
         assertThat(result.counts()).isEqualTo(new ImportCountsDto(84, 0, 138, 0, 0, 13, 0, 13, 0));
-        assertThat(result.warnings()).anyMatch(w -> w.contains("JIRA/IZERTIA") && w.contains("no se importan"));
         assertThat(result.detectedSettings())
-                .isEqualTo(new DetectedSettingsDto(20, 30, 50, 8, 480, 420, 23, 105_600));
+                .isEqualTo(new DetectedSettingsDto(20, 30, 50, 480, 420, 23, 105_600));
 
         assertThat(workdays.findByUserIdAndDateBetweenOrderByDate(user.getId(), FROM, TO)).isEmpty();
         assertThat(absences.findByUserIdAndDateBetweenOrderByDate(user.getId(), FROM, TO)).isEmpty();
@@ -239,7 +237,6 @@ class ImportExportIT {
         assertThat(may26.getStartTime()).isEqualTo(LocalTime.of(7, 25));
         assertThat(may26.getEndTime()).isEqualTo(LocalTime.of(17, 59));
         assertThat(may26.getLocation()).isEqualTo(Location.CASA);
-        assertThat(may26.getJiraMinutes()).isNull();
         assertThat(may26.getBreaks()).extracting(b -> b.getType() + " " + b.getStartTime() + "-" + b.getEndTime())
                 .containsExactly("DESAYUNO 12:43-13:02", "COMIDA 15:02-15:32");
         assertThat(CALCULATOR.calculate(WorkdayInputs.from(may26)).workedMinutes()).isEqualTo(604);
@@ -308,20 +305,6 @@ class ImportExportIT {
         assertThat(may26.getBreaks()).hasSize(2);
         assertThat(CALCULATOR.calculate(WorkdayInputs.from(may26)).workedMinutes()).isEqualTo(604);
         assertThat(workdays.findByUserIdAndDateBetweenOrderByDate(user.getId(), FROM, TO)).hasSize(84);
-    }
-
-    @Test
-    void imputationsAreImportedOnlyWhenRequested() throws Exception {
-        User user = newUser();
-        createExcelPeriod(user);
-
-        ImportResultDto result = read(upload(user, xlsx(EXCEL), "includeImputations", "true", "dryRun", "false")
-                .andExpect(status().isOk()));
-
-        assertThat(result.warnings()).anyMatch(w -> w.contains("JIRA/IZERTIA") && w.contains("revisa"));
-        Workday may26 = workdays.findByUserIdAndDate(user.getId(), MAY_26).orElseThrow();
-        assertThat(may26.getJiraMinutes()).isEqualTo(660);
-        assertThat(may26.getIzertiaMinutes()).isEqualTo(660);
     }
 
     // ------------------------------------------------------------------ errores
@@ -409,7 +392,7 @@ class ImportExportIT {
     void exportedJuneReimportedByAnotherUserGivesTheSameWorkdays() throws Exception {
         User livan = newUser();
         createExcelPeriod(livan);
-        upload(livan, xlsx(EXCEL), "dryRun", "false", "includeImputations", "true").andExpect(status().isOk());
+        upload(livan, xlsx(EXCEL), "dryRun", "false").andExpect(status().isOk());
 
         MvcResult export = mvc.perform(get("/api/export/xlsx").param("year", "2026").param("month", "6")
                         .with(auth(livan)))
@@ -422,7 +405,7 @@ class ImportExportIT {
         User other = newUser();
         createExcelPeriod(other);
         ImportResultDto result = read(upload(other, new MockMultipartFile("file", "horas-2026-06.xlsx", XLSX, june),
-                "dryRun", "false", "includeImputations", "true").andExpect(status().isOk()));
+                "dryRun", "false").andExpect(status().isOk()));
 
         assertThat(result.sheets()).containsExactly(new ImportSheetDto("Junio 2026",
                 YearMonth.of(2026, 6), 22, 0));
@@ -489,7 +472,6 @@ class ImportExportIT {
         period.setMinLunchMin(30);
         period.setRoundingStepMin(15);
         period.setMaxRemotePct(50);
-        period.setMaxRemoteDaysMonth(8);
         period.setOpeningBalanceMin(0);
         return periods.save(period);
     }
@@ -531,7 +513,7 @@ class ImportExportIT {
         List<String> rows = new ArrayList<>();
         for (Workday w : list) {
             rows.add(w.getDate() + " " + w.getStartTime() + "-" + w.getEndTime() + " " + w.getLocation() + " remote="
-                    + w.getRemoteMinutes() + " jira=" + w.getJiraMinutes() + " izertia=" + w.getIzertiaMinutes() + " "
+                    + w.getRemoteMinutes() + " "
                     + w.getBreaks().stream().map(b -> b.getType() + " " + b.getStartTime() + "-" + b.getEndTime())
                             .toList());
         }

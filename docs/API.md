@@ -29,8 +29,7 @@ Fuente de verdad para backend y frontend. Todo cuelga de `/api`. Salvo `/api/aut
   (bloqueo optimista o duplicado), 413 fichero grande, 429 rate limit (con cabecera `Retry-After`).
 
 `IssueDto` (avisos de cálculo): `{ "code": "LUNCH_BELOW_MINIMUM", "field": "breaks" | null, "message": "..." }`.
-Códigos: `LUNCH_BELOW_MINIMUM`, `MISSING_RECORD`, `JIRA_IZERTIA_MISMATCH`, `JIRA_ROUNDED_MISMATCH`,
-`IZERTIA_ROUNDED_MISMATCH`, `REMOTE_PCT_EXCEEDED`, `REMOTE_DAYS_EXCEEDED`, `VACATION_OVERPLANNED`.
+Códigos: `LUNCH_BELOW_MINIMUM`, `MISSING_RECORD`, `REMOTE_PCT_EXCEEDED`, `VACATION_OVERPLANNED`.
 
 ---
 
@@ -98,7 +97,7 @@ PeriodDto {
   "agreementMinutes": 105600, "vacationDays": 23,
   "normalDayMinutes": 480, "intensiveDayMinutes": 420,
   "breakfastToleranceMin": 20, "minLunchMin": 30, "roundingStepMin": 15,
-  "maxRemotePct": 50, "maxRemoteDaysMonth": 8, "openingBalanceMin": 0,
+  "maxRemotePct": 50, "openingBalanceMin": 0,
   "intensiveRanges": [ { "startDate": "2026-06-15", "endDate": "2026-09-15" } ],
   "version": 0
 }
@@ -147,7 +146,7 @@ WorkdayDto {
   "breaks": [ { "type": "DESAYUNO", "startTime": "12:43", "endTime": "13:02" },
               { "type": "COMIDA",   "startTime": "15:02", "endTime": "15:32" } ],
   "location": "OFICINA" | "CASA" | "MIXTO",
-  "remoteMinutes": null, "jiraMinutes": 660, "izertiaMinutes": 660, "notes": null,
+  "remoteMinutes": null, "notes": null,
   "version": 3,
   "totals": { "grossMinutes": 634, "breakfastMinutes": 19, "breakfastDeductedMinutes": 0,
               "lunchMinutes": 30, "lunchDeductedMinutes": 30, "otherBreakMinutes": 0,
@@ -162,7 +161,7 @@ WorkdayDto {
 - `PUT /api/workdays/{date}` → 200 `WorkdayDto` (crea o actualiza; idempotente). Cuerpo:
   ```json
   { "startTime": "07:25", "endTime": "17:59", "breaks": [...], "location": "MIXTO",
-    "remoteMinutes": 240, "jiraMinutes": null, "izertiaMinutes": null, "notes": null, "version": 3 }
+    "remoteMinutes": 240, "notes": null, "version": 3 }
   ```
   `version`: null al crear; la del último GET al actualizar. 409 si no coincide o si se intenta crear
   (version null) un día que ya existe. 400 si no hay periodo que incluya la fecha
@@ -196,8 +195,7 @@ MonthSummaryDto {
   "theoreticalToDateMinutes": 9840, "workedToDateMinutes": 9960, "differenceToDateMinutes": 120,
   "openingBalanceMinutes": 90, "closingBalanceMinutes": 210,
   "remoteMinutes": 4545, "officeMinutes": 5415, "remotePct": 45.6, "remoteDays": 10,
-  "maxRemotePct": 50, "maxRemoteDaysMonth": 8,
-  "jiraMinutes": null, "izertiaMinutes": null, "imputationWarningDays": 0,
+  "maxRemotePct": 50,
   "warnings": [ IssueDto ],
   "weeks": [ { "weekStart": "2026-06-01", "weekEnd": "2026-06-07", "theoreticalMinutes": 2400,
                "workedMinutes": 2356, "roundedMinutes": 2355 } ],
@@ -243,8 +241,8 @@ DashboardDto {
   "balanceToDateMinutes": 594,
   "currentMonth": { "month": "2026-10", "theoreticalMinutes": 10080, "workedMinutes": 2406, "differenceMinutes": -7674,
                     "theoreticalToDateMinutes": 2400, "workedToDateMinutes": 2406, "differenceToDateMinutes": 6,
-                    "remotePct": 39.7, "remoteDays": 2, "maxRemotePct": 50, "maxRemoteDaysMonth": 8,
-                    "imputationWarningDays": 0, "warnings": [ IssueDto ] } | null,
+                    "remotePct": 39.7, "remoteDays": 2, "maxRemotePct": 50,
+                    "warnings": [ IssueDto ] } | null,
   "vacations": { "totalDays": 23, "takenDays": 13, "remainingDays": 10, "pendingPlannedDays": 0 } | null,
   "hoursToRecoverMinutes": 840, "projectionMinutes": -246,
   "todayIsWorkingDay": true, "todayDayMinutes": 480, "todayWorkday": WorkdayDto | null
@@ -257,8 +255,8 @@ DashboardDto {
 
 ### `POST /api/import/xlsx` (`multipart/form-data`)
 Campos: `file` (obligatorio, .xlsx ≤ 2 MB), `dryRun` (por defecto `true`), `periodId` (opcional; por
-defecto el periodo que contiene más fechas del fichero), `includeFuture` (`false`), `includeImputations`
-(`false`), `markVacations` (`true`), `overwrite` (`false`).
+defecto el periodo que contiene más fechas del fichero), `includeFuture` (`false`), `markVacations` (`true`),
+`overwrite` (`false`).
 
 Flujo: el frontend sube con `dryRun=true`, enseña la vista previa, y al confirmar vuelve a subir el mismo
 fichero con `dryRun=false` y las opciones elegidas. Respuesta (en ambos casos):
@@ -269,14 +267,13 @@ ImportResultDto {
   "days": [ { "date": "2026-06-01", "sheet": "Junio", "row": 7,
               "status": "NEW" | "EXISTS" | "FUTURE" | "OUT_OF_PERIOD" | "INVALID" | "NOT_REPRESENTABLE",
               "action": "IMPORT" | "SKIP",
-              "workday": { "startTime", "endTime", "breaks", "location", "remoteMinutes", "jiraMinutes",
-                           "izertiaMinutes", "notes" },
+              "workday": { "startTime", "endTime", "breaks", "location", "remoteMinutes", "notes" },
               "excelWorkedMinutes": 466, "computedWorkedMinutes": 466, "messages": [ "..." ] } ],
   "absences": [ { "date": "2026-07-10", "type": "VACACIONES", "action": "IMPORT" | "SKIP", "reason": "..." } ],
   "detectedSettings": { "breakfastToleranceMin": 20, "minLunchMin": 30, "maxRemotePct": 50,
-                        "maxRemoteDaysMonth": 8, "normalDayMinutes": 480, "intensiveDayMinutes": 420,
+                        "normalDayMinutes": 480, "intensiveDayMinutes": 420,
                         "vacationDays": 23, "agreementMinutes": 105600 },
-  "warnings": [ "Las columnas JIRA/IZERTIA parecen copiadas de la plantilla: no se importan" ],
+  "warnings": [ "1 día con fichaje queda fuera del periodo «2026-2027»" ],
   "counts": { "toImport": 168, "imported": 0, "skippedFuture": 67, "skippedExisting": 0,
               "skippedOutOfPeriod": 0, "invalid": 0, "mismatches": 0,
               "vacationsToCreate": 13, "vacationsCreated": 0 }

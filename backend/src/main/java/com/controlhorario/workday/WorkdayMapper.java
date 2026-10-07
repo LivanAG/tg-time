@@ -18,8 +18,6 @@ public interface WorkdayMapper {
     @Mapping(target = "breaks", source = "workday.breaks")
     @Mapping(target = "location", source = "workday.location")
     @Mapping(target = "remoteMinutes", source = "workday.remoteMinutes")
-    @Mapping(target = "jiraMinutes", source = "workday.jiraMinutes")
-    @Mapping(target = "izertiaMinutes", source = "workday.izertiaMinutes")
     @Mapping(target = "notes", source = "workday.notes")
     @Mapping(target = "version", source = "workday.version")
     @Mapping(target = "totals", source = "result")

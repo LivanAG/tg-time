@@ -13,7 +13,5 @@ public record ImportWorkdayDto(
         List<ImportBreakDto> breaks,
         Location location,
         Integer remoteMinutes,
-        Integer jiraMinutes,
-        Integer izertiaMinutes,
         String notes) {
 }

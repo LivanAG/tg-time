@@ -30,13 +30,15 @@ describe('Inicio', () => {
     const remote = screen.getByRole('region', { name: 'Teletrabajo del mes' })
     expect(remote).toHaveTextContent('39,7 %')
     expect(remote).toHaveTextContent('máx. 50 %')
-    expect(within(remote).getAllByRole('meter')).toHaveLength(2)
+    expect(within(remote).getAllByRole('meter')).toHaveLength(1)
+    expect(remote).toHaveTextContent('Días en casa o mixtos2')
+    expect(remote).not.toHaveTextContent('máx. 8')
 
     const projection = screen.getByRole('region', { name: 'Horas a recuperar y proyección' })
     expect(within(projection).getByText('14:00')).toBeInTheDocument()
     expect(within(projection).getByText('-4:06')).toHaveClass('text-red-600')
 
-    expect(screen.getByText(/día con avisos/)).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Avisos del mes' })).toHaveTextContent('Sin avisos este mes.')
   })
 
   it('"Fichar hoy" abre el editor del día de hoy', async () => {
@@ -120,7 +122,6 @@ describe('Inicio', () => {
       minLunchMin: 30,
       roundingStepMin: 15,
       maxRemotePct: 50,
-      maxRemoteDaysMonth: 8,
       openingBalanceMin: 0,
       intensiveRanges: [{ startDate: '2026-06-15', endDate: '2026-09-15' }],
       preloadHolidays: true,

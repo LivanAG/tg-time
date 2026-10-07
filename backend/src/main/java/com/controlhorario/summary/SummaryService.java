@@ -170,8 +170,7 @@ public class SummaryService {
                 monthSummary.theoreticalMinutes(), monthSummary.workedMinutes(), monthSummary.differenceMinutes(),
                 monthSummary.theoreticalToDateMinutes(), monthSummary.workedToDateMinutes(),
                 monthSummary.differenceToDateMinutes(), monthSummary.remotePct(), monthSummary.remoteDays(),
-                rules.maxRemotePct(), rules.maxRemoteDaysMonth(), monthSummary.imputationWarningDays(),
-                workdayMapper.toIssues(monthSummary.warnings()));
+                rules.maxRemotePct(), workdayMapper.toIssues(monthSummary.warnings()));
         DashboardDto.Vacations vacations = new DashboardDto.Vacations(periodSummary.vacations().totalDays(),
                 periodSummary.vacations().takenDays(), periodSummary.vacations().remainingDays(),
                 periodSummary.vacations().pendingPlannedDays());
@@ -205,9 +204,8 @@ public class SummaryService {
                 s.vacationMinutes(), s.bridgeDays(), s.bridgeMinutes(), s.workedMinutes(), s.roundedMinutes(),
                 s.differenceMinutes(), s.theoreticalToDateMinutes(), s.workedToDateMinutes(),
                 s.differenceToDateMinutes(), s.openingBalanceMinutes(), s.closingBalanceMinutes(), s.remoteMinutes(),
-                s.officeMinutes(), s.remotePct(), s.remoteDays(), rules.maxRemotePct(), rules.maxRemoteDaysMonth(),
-                s.jiraMinutes(), s.izertiaMinutes(), s.imputationWarningDays(), workdayMapper.toIssues(s.warnings()),
-                mapper.toWeekDtos(s.weeks()), days);
+                s.officeMinutes(), s.remotePct(), s.remoteDays(), rules.maxRemotePct(),
+                workdayMapper.toIssues(s.warnings()), mapper.toWeekDtos(s.weeks()), days);
     }
 
     private DayDto toDto(PeriodData data, DaySummary day) {

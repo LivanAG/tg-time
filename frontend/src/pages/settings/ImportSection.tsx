@@ -30,7 +30,6 @@ type Options = Omit<ImportOptions, 'dryRun'>
 const DEFAULT_OPTIONS: Options = {
   periodId: null,
   includeFuture: false,
-  includeImputations: false,
   markVacations: true,
   overwrite: false,
 }
@@ -175,12 +174,6 @@ export function ImportSection() {
             hint="El Excel trae los meses siguientes ya rellenos copiando semanas anteriores: normalmente no son reales."
             checked={options.includeFuture}
             onChange={(e) => setOption('includeFuture', e.target.checked)}
-          />
-          <CheckboxField
-            label="Importar imputaciones JIRA/IZERTIA"
-            hint="Desactivado por defecto: en el Excel suelen estar copiadas de la plantilla."
-            checked={options.includeImputations}
-            onChange={(e) => setOption('includeImputations', e.target.checked)}
           />
           <CheckboxField
             label="Marcar vacaciones deducidas"
@@ -481,7 +474,6 @@ const SETTING_ROWS: SettingRow[] = [
   { key: 'breakfastToleranceMin', label: 'Tolerancia de desayuno', format: (v) => `${v} min` },
   { key: 'minLunchMin', label: 'Comida mínima', format: (v) => `${v} min` },
   { key: 'maxRemotePct', label: '% máximo de teletrabajo', format: (v) => `${v} %` },
-  { key: 'maxRemoteDaysMonth', label: 'Días máx. de teletrabajo al mes', format: String },
 ]
 
 /** Parámetros leídos del Excel frente a los del periodo (avisa si no coinciden). */

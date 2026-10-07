@@ -99,7 +99,7 @@ public class WorkdayService {
                 .map(b -> new BreakInput(b.type(), b.startTime(), b.endTime()))
                 .toList();
         WorkdayInput input = new WorkdayInput(date, request.startTime(), request.endTime(), breaks, location,
-                remoteMinutes, request.jiraMinutes(), request.izertiaMinutes());
+                remoteMinutes);
         List<CalcIssue> errors = calculator.validate(input);
         if (!errors.isEmpty()) {
             throw new ValidationException(errors.stream()
@@ -129,8 +129,6 @@ public class WorkdayService {
         workday.setEndTime(request.endTime());
         workday.setLocation(location);
         workday.setRemoteMinutes(remoteMinutes);
-        workday.setJiraMinutes(request.jiraMinutes());
-        workday.setIzertiaMinutes(request.izertiaMinutes());
         workday.setNotes(blankToNull(request.notes()));
         if (breaksChanged) {
             workday.replaceBreaks(breaks.stream()

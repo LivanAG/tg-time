@@ -37,8 +37,8 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
 /**
  * Genera una hoja mensual con el diseño del Excel original (docs/EXCEL.md), de forma que se pueda
- * volver a importar: cabecera F1-F3, J1-J3 y L1/L2; filas 7-39 por la misma rejilla; columnas B-I,
- * M, N/O, V y AC con los datos; J/K/L/P con los valores calculados (no fórmulas); subtotales
+ * volver a importar: cabecera F1-F3, J1/J2 y L1/L2; filas 7-39 por la misma rejilla; columnas B-I,
+ * M y N/O con los datos; J/K/L/P con los valores calculados (no fórmulas); subtotales
  * semanales en las filas 12, 19, 26, 33 y 40; pie con teóricas (C46), hechas (C47), faltan (C48),
  * sobran (C49) y vacaciones (C53).
  */
@@ -167,8 +167,6 @@ public final class ExcelMonthWriter {
         number(r1, 9, onlyIntensive ? summary.intensiveDays() : summary.normalDays(), null);
         text(r2, 8, "Horas / Día:", styles.bold);
         duration(r2, 9, onlyIntensive ? rules.intensiveDayMinutes() : rules.normalDayMinutes(), styles.time);
-        text(r3, 8, "Días R.Dom:", styles.bold);
-        number(r3, 9, rules.maxRemoteDaysMonth(), null);
         if (mixed) {
             text(r1, 10, "Dias Mes:", styles.bold);
             number(r1, 11, summary.intensiveDays(), null);
@@ -181,8 +179,6 @@ public final class ExcelMonthWriter {
         for (int c = 0; c < HEADERS.length; c++) {
             text(headerRow, c, HEADERS[c], styles.header);
         }
-        text(headerRow, ExcelLayout.COL_JIRA, "JIRA", styles.header);
-        text(headerRow, ExcelLayout.COL_IZERTIA, "IZERTIA", styles.header);
     }
 
     private static void writeDays(Sheet sheet, Styles styles, MonthData data, YearMonth month) {
@@ -237,12 +233,6 @@ public final class ExcelMonthWriter {
                 time(row, ExcelLayout.COL_REMOTE_START, workday.end().minusMinutes(remote), styles.time);
                 time(row, ExcelLayout.COL_REMOTE_END, workday.end(), styles.time);
             }
-            if (workday.jiraMinutes() != null) {
-                duration(row, ExcelLayout.COL_JIRA, workday.jiraMinutes(), styles.time);
-            }
-            if (workday.izertiaMinutes() != null) {
-                duration(row, ExcelLayout.COL_IZERTIA, workday.izertiaMinutes(), styles.time);
-            }
         }
 
         // Subtotales por semana de la rejilla (incluye el fin de semana, por si se trabajó).
@@ -271,12 +261,6 @@ public final class ExcelMonthWriter {
         text(total, ExcelLayout.COL_DATE, "Total Mes", styles.bold);
         duration(total, ExcelLayout.COL_WORKED, summary.workedMinutes(), styles.totalBold);
         duration(total, ExcelLayout.COL_ROUNDED, rounded, styles.totalBold);
-        if (summary.jiraMinutes() != null) {
-            duration(total, ExcelLayout.COL_JIRA, summary.jiraMinutes(), styles.totalBold);
-        }
-        if (summary.izertiaMinutes() != null) {
-            duration(total, ExcelLayout.COL_IZERTIA, summary.izertiaMinutes(), styles.totalBold);
-        }
 
         int theoretical = summary.theoreticalMinutes();
         int worked = summary.workedMinutes();
@@ -322,8 +306,6 @@ public final class ExcelMonthWriter {
         for (int c = ExcelLayout.COL_START; c <= ExcelLayout.COL_ROUNDED; c++) {
             sheet.setColumnWidth(c, 10 * 256);
         }
-        sheet.setColumnWidth(ExcelLayout.COL_JIRA, 9 * 256);
-        sheet.setColumnWidth(ExcelLayout.COL_IZERTIA, 9 * 256);
     }
 
     /** Fila en numeración de Excel (base 1). */

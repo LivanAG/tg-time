@@ -43,13 +43,11 @@ public class ImportExportController {
             @RequestParam(defaultValue = "true") boolean dryRun,
             @RequestParam(required = false) UUID periodId,
             @RequestParam(defaultValue = "false") boolean includeFuture,
-            @RequestParam(defaultValue = "false") boolean includeImputations,
             @RequestParam(defaultValue = "true") boolean markVacations,
             @RequestParam(defaultValue = "false") boolean overwrite) {
         UUID userId = currentUser.id();
         byte[] content = uploadValidator.validate(file);
-        ImportOptions options = new ImportOptions(dryRun, periodId, includeFuture, includeImputations, markVacations,
-                overwrite);
+        ImportOptions options = new ImportOptions(dryRun, periodId, includeFuture, markVacations, overwrite);
         return importService.importXlsx(userId, XlsxUploadValidator.displayName(file.getOriginalFilename()), content,
                 options);
     }

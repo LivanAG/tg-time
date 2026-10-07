@@ -2,7 +2,7 @@
 
 App web que sustituye al Excel `HORAS_IZERTIS_2026-27`: registras los fichajes de cada día y la app
 calcula las horas del día, del mes y el balance anual frente a las horas de convenio, con vacaciones,
-jornada intensiva, teletrabajo e imputaciones JIRA/IZERTIA. Multiusuario con login.
+jornada intensiva y teletrabajo. Multiusuario con login.
 
 ## Probarla en local
 
@@ -38,7 +38,8 @@ Todo se calcula en minutos enteros a partir de los fichajes; no se guarda ningú
 - **Día:** `trabajado = (salida − entrada) − max(0, desayuno − 20 min) − max(comida, 30 min) − otras pausas`.
 - **Redondeo a 15 min sin deriva:** se redondea el acumulado del mes y cada día recibe la diferencia.
 - **Mes:** teóricas (laborables sin ausencia, medio día = mitad), hechas, diferencia **con signo**,
-  saldo acumulado, vacaciones, puentes recuperables, teletrabajo (% y días) e imputaciones.
+  saldo acumulado, vacaciones, puentes recuperables y teletrabajo (el límite es solo el %; los días en
+  casa son informativos).
 - **Periodo (hoja Horas):** horas calendario, margen sobre convenio, valor de las vacaciones, horas a
   recuperar, margen restante y proyección a fin de periodo.
 

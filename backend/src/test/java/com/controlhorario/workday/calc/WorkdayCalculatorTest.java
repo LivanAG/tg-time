@@ -26,8 +26,7 @@ class WorkdayCalculatorTest {
     }
 
     private static WorkdayInput day(String start, String end, BreakInput... breaks) {
-        return new WorkdayInput(LocalDate.of(2026, 5, 26), t(start), t(end), List.of(breaks), Location.OFICINA,
-                null, null, null);
+        return new WorkdayInput(LocalDate.of(2026, 5, 26), t(start), t(end), List.of(breaks), Location.OFICINA, null);
     }
 
     private static BreakInput br(BreakType type, String start, String end) {
@@ -94,8 +93,8 @@ class WorkdayCalculatorTest {
     void locationSplitsOfficeAndRemoteMinutes() {
         WorkdayInput base = day("08:00", "16:00");
         WorkdayInput office = base;
-        WorkdayInput home = new WorkdayInput(base.date(), base.start(), base.end(), List.of(), Location.CASA, null, null, null);
-        WorkdayInput mixed = new WorkdayInput(base.date(), base.start(), base.end(), List.of(), Location.MIXTO, 180, null, null);
+        WorkdayInput home = new WorkdayInput(base.date(), base.start(), base.end(), List.of(), Location.CASA, null);
+        WorkdayInput mixed = new WorkdayInput(base.date(), base.start(), base.end(), List.of(), Location.MIXTO, 180);
 
         assertThat(calculator.calculate(office)).extracting(WorkdayResult::officeMinutes, WorkdayResult::remoteMinutes)
                 .containsExactly(480, 0);
@@ -120,9 +119,9 @@ class WorkdayCalculatorTest {
                 .containsExactly(WorkdayCalculator.BREAK_INVALID);
 
         WorkdayInput mixedWithout = new WorkdayInput(LocalDate.of(2026, 6, 1), t("08:00"), t("16:00"), List.of(),
-                Location.MIXTO, null, null, null);
+                Location.MIXTO, null);
         WorkdayInput mixedTooMuch = new WorkdayInput(LocalDate.of(2026, 6, 1), t("08:00"), t("16:00"), List.of(),
-                Location.MIXTO, 500, null, null);
+                Location.MIXTO, 500);
         assertThat(codes(mixedWithout)).containsExactly(WorkdayCalculator.REMOTE_MINUTES_REQUIRED);
         assertThat(codes(mixedTooMuch)).containsExactly(WorkdayCalculator.REMOTE_MINUTES_EXCEED_WORKED);
         assertThat(codes(day("07:25", "17:59", br(BreakType.DESAYUNO, "12:43", "13:02")))).isEmpty();

@@ -19,7 +19,6 @@ public record PeriodRules(
         int minLunchMin,
         int roundingStepMin,
         int maxRemotePct,
-        int maxRemoteDaysMonth,
         int openingBalanceMin,
         List<DateRange> intensiveRanges,
         Map<LocalDate, String> holidays) {

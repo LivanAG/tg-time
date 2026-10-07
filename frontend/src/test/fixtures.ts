@@ -45,7 +45,6 @@ export const period: PeriodDto = {
   minLunchMin: 30,
   roundingStepMin: 15,
   maxRemotePct: 50,
-  maxRemoteDaysMonth: 8,
   openingBalanceMin: 0,
   intensiveRanges: [{ startDate: '2026-06-15', endDate: '2026-09-15' }],
   version: 0,
@@ -59,7 +58,7 @@ export function workday(
   endTime: string,
   breaks: BreakDto[] = [],
   extra: Partial<
-    Pick<WorkdayDto, 'location' | 'remoteMinutes' | 'jiraMinutes' | 'izertiaMinutes' | 'notes' | 'version'>
+    Pick<WorkdayDto, 'location' | 'remoteMinutes' | 'notes' | 'version'>
   > = {},
 ): WorkdayDto {
   const location: WorkLocation = extra.location ?? 'OFICINA'
@@ -73,8 +72,6 @@ export function workday(
     breaks,
     location,
     remoteMinutes,
-    jiraMinutes: extra.jiraMinutes ?? null,
-    izertiaMinutes: extra.izertiaMinutes ?? null,
     notes: extra.notes ?? null,
     version: extra.version ?? 0,
     totals,
@@ -91,7 +88,7 @@ export const referenceDay = workday(
     { type: 'DESAYUNO', startTime: '12:43', endTime: '13:02' },
     { type: 'COMIDA', startTime: '15:02', endTime: '15:32' },
   ],
-  { jiraMinutes: 600, izertiaMinutes: 615, version: 3 },
+  { version: 3 },
 )
 
 export function dashboard(overrides: Partial<DashboardDto> = {}): DashboardDto {
@@ -110,8 +107,6 @@ export function dashboard(overrides: Partial<DashboardDto> = {}): DashboardDto {
       remotePct: 39.7,
       remoteDays: 2,
       maxRemotePct: 50,
-      maxRemoteDaysMonth: 8,
-      imputationWarningDays: 1,
       warnings: [],
     },
     vacations: { totalDays: 23, takenDays: 13, remainingDays: 10, pendingPlannedDays: 0 },
@@ -180,14 +175,11 @@ export function octoberSummary(): MonthSummaryDto {
     previousRounded = round15(accumulated)
     const warnings: IssueDto[] = [...(w?.warnings ?? [])]
     if (date === '2026-10-01') {
-      warnings.push(
-        { code: 'JIRA_IZERTIA_MISMATCH', field: null, message: 'JIRA (10:00) no coincide con IZERTIA (10:15)' },
-        {
-          code: 'IZERTIA_ROUNDED_MISMATCH',
-          field: null,
-          message: 'IZERTIA (10:15) no coincide con el redondeado (10:00)',
-        },
-      )
+      warnings.push({
+        code: 'LUNCH_BELOW_MINIMUM',
+        field: 'breaks',
+        message: 'La comida dura 20 min: se descuenta el mínimo de 30 min',
+      })
     }
     days.push({
       date,
@@ -247,10 +239,6 @@ export function octoberSummary(): MonthSummaryDto {
     remotePct: 33.3,
     remoteDays: 2,
     maxRemotePct: 50,
-    maxRemoteDaysMonth: 8,
-    jiraMinutes: 600,
-    izertiaMinutes: 615,
-    imputationWarningDays: 1,
     warnings: [],
     weeks,
     days,
@@ -282,8 +270,6 @@ export function importPreview(overrides: Partial<ImportResultDto> = {}): ImportR
           ],
           location: 'OFICINA',
           remoteMinutes: null,
-          jiraMinutes: null,
-          izertiaMinutes: null,
           notes: null,
         },
         excelWorkedMinutes: 604,
@@ -302,8 +288,6 @@ export function importPreview(overrides: Partial<ImportResultDto> = {}): ImportR
           breaks: [],
           location: 'OFICINA',
           remoteMinutes: null,
-          jiraMinutes: null,
-          izertiaMinutes: null,
           notes: null,
         },
         excelWorkedMinutes: 480,
@@ -316,13 +300,12 @@ export function importPreview(overrides: Partial<ImportResultDto> = {}): ImportR
       breakfastToleranceMin: 20,
       minLunchMin: 30,
       maxRemotePct: 50,
-      maxRemoteDaysMonth: 8,
       normalDayMinutes: 480,
       intensiveDayMinutes: 420,
       vacationDays: 23,
       agreementMinutes: 105600,
     },
-    warnings: ['Las columnas JIRA/IZERTIA parecen copiadas de la plantilla: no se importan'],
+    warnings: ['1 día con fichaje queda fuera del periodo «2026-2027»'],
     counts: {
       toImport: 168,
       imported: 0,

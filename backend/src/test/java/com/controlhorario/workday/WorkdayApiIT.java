@@ -45,8 +45,7 @@ class WorkdayApiIT extends DomainApiTestSupport {
                 .andExpect(jsonPath("$.breaks[1].endTime").value("15:32"))
                 .andExpect(jsonPath("$.location").value("OFICINA"))
                 .andExpect(jsonPath("$.remoteMinutes").isEmpty())
-                .andExpect(jsonPath("$.jiraMinutes").value(660))
-                .andExpect(jsonPath("$.izertiaMinutes").value(660))
+                .andExpect(jsonPath("$.jiraMinutes").doesNotExist())
                 .andExpect(jsonPath("$.notes").isEmpty())
                 .andExpect(jsonPath("$.version").value(0))
                 .andExpect(jsonPath("$.totals.grossMinutes").value(634))
@@ -97,13 +96,13 @@ class WorkdayApiIT extends DomainApiTestSupport {
 
         Map<String, Object> missing = referenceDay();
         missing.put("startTime", null);
-        missing.put("jiraMinutes", -5);
+        missing.put("remoteMinutes", -5);
         missing.put("notes", "x".repeat(501));
         putWorkday(user, MAY_26, missing)
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errors", hasSize(3)))
                 .andExpect(jsonPath("$.errors[*].field", hasItem("startTime")))
-                .andExpect(jsonPath("$.errors[*].field", hasItem("jiraMinutes")))
+                .andExpect(jsonPath("$.errors[*].field", hasItem("remoteMinutes")))
                 .andExpect(jsonPath("$.errors[*].field", hasItem("notes")));
 
         putWorkday(user, LocalDate.of(2026, 5, 25), referenceDay())

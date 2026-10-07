@@ -103,7 +103,6 @@ export const importExportApi = {
       form.append('periodId', options.periodId)
     }
     form.append('includeFuture', String(options.includeFuture))
-    form.append('includeImputations', String(options.includeImputations))
     form.append('markVacations', String(options.markVacations))
     form.append('overwrite', String(options.overwrite))
     return apiRequest<ImportResultDto>('/import/xlsx', { method: 'POST', body: form })

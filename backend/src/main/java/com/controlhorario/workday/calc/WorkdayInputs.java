@@ -13,7 +13,6 @@ public final class WorkdayInputs {
                 workday.getBreaks().stream()
                         .map(b -> new BreakInput(b.getType(), b.getStartTime(), b.getEndTime()))
                         .toList(),
-                workday.getLocation(), workday.getRemoteMinutes(), workday.getJiraMinutes(),
-                workday.getIzertiaMinutes());
+                workday.getLocation(), workday.getRemoteMinutes());
     }
 }

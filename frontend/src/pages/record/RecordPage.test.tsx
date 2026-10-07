@@ -40,13 +40,11 @@ describe('Registro mensual', () => {
     // Día de referencia: entrada, pausas, salida, total y redondeado.
     expect(screen.getByLabelText('Entrada del jue 1')).toHaveValue('07:25')
     expect(screen.getByLabelText('Salida del jue 1')).toHaveValue('17:59')
-    expect(screen.getByLabelText('JIRA del jue 1')).toHaveValue('10:00')
-    expect(screen.getByLabelText('IZERTIA del jue 1')).toHaveValue('10:15')
     const firstRow = screen.getByLabelText('Entrada del jue 1').closest('tr') as HTMLElement
     expect(firstRow).toHaveTextContent('D 12:43–13:02 · C 15:02–15:32')
     expect(firstRow).toHaveTextContent('10:04')
     expect(firstRow).toHaveTextContent('10:00')
-    expect(within(firstRow).getByRole('button', { name: '2 avisos del jue 1' })).toBeInTheDocument()
+    expect(within(firstRow).getByRole('button', { name: '1 aviso del jue 1' })).toBeInTheDocument()
     expect(screen.getByLabelText('Ubicación del mar 6')).toHaveValue('MIXTO')
 
     // Festivo, vacaciones y fines de semana diferenciados.
@@ -63,16 +61,16 @@ describe('Registro mensual', () => {
     expect(within(close).getByText('+8:50')).toBeInTheDocument()
     expect(within(close).getByText('-118:06')).toHaveClass('text-red-600')
     expect(within(close).getByText('33,3 %')).toBeInTheDocument()
-    expect(within(close).getByText('Días con avisos de imputación').nextElementSibling).toHaveTextContent('1')
+    expect(within(close).getByText('Días en casa').nextElementSibling).toHaveTextContent('2')
   })
 
   it('despliega los avisos de un día', async () => {
     mockApi(routes())
     renderApp('/registro/2026-10')
 
-    fireEvent.click(await screen.findByRole('button', { name: '2 avisos del jue 1' }))
+    fireEvent.click(await screen.findByRole('button', { name: '1 aviso del jue 1' }))
 
-    expect(screen.getByText(/JIRA \(10:00\) no coincide con IZERTIA \(10:15\)/)).toBeInTheDocument()
+    expect(screen.getByText('⚠ La comida dura 20 min: se descuenta el mínimo de 30 min')).toBeInTheDocument()
   })
 
   it('guarda la fila al salir de ella con PUT y version', async () => {
@@ -105,8 +103,6 @@ describe('Registro mensual', () => {
       breaks: [],
       location: 'OFICINA',
       remoteMinutes: null,
-      jiraMinutes: null,
-      izertiaMinutes: null,
       notes: null,
       version: null,
     })
@@ -119,9 +115,8 @@ describe('Registro mensual', () => {
     expect(saved).toHaveBeenLastCalledWith(expect.objectContaining({ endTime: '16:00', version: 0 }))
 
     // Día existente: conserva pausas y notas y envía su versión.
-    fireEvent.change(screen.getByLabelText('JIRA del jue 1'), { target: { value: '10:00' } })
-    fireEvent.change(screen.getByLabelText('IZERTIA del jue 1'), { target: { value: '10:00' } })
-    fireEvent.keyDown(screen.getByLabelText('IZERTIA del jue 1'), { key: 'Enter' })
+    fireEvent.change(screen.getByLabelText('Ubicación del jue 1'), { target: { value: 'CASA' } })
+    fireEvent.keyDown(screen.getByLabelText('Ubicación del jue 1'), { key: 'Enter' })
 
     await waitFor(() => expect(saved).toHaveBeenCalledTimes(3))
     expect(saved).toHaveBeenLastCalledWith(
@@ -132,8 +127,7 @@ describe('Registro mensual', () => {
           { type: 'DESAYUNO', startTime: '12:43', endTime: '13:02' },
           { type: 'COMIDA', startTime: '15:02', endTime: '15:32' },
         ],
-        jiraMinutes: 600,
-        izertiaMinutes: 600,
+        location: 'CASA',
         version: 3,
       }),
     )

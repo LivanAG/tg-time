@@ -65,11 +65,6 @@ public record PeriodCreateRequest(
         @Max(value = 100, message = "El porcentaje máximo de teletrabajo debe estar entre 0 y 100")
         Integer maxRemotePct,
 
-        @NotNull(message = "Los días máximos de teletrabajo al mes son obligatorios")
-        @Min(value = 0, message = "Los días máximos de teletrabajo al mes deben estar entre 0 y 31")
-        @Max(value = 31, message = "Los días máximos de teletrabajo al mes deben estar entre 0 y 31")
-        Integer maxRemoteDaysMonth,
-
         @Min(value = -PeriodService.MAX_AGREEMENT_MINUTES, message = "El saldo inicial no es válido")
         @Max(value = PeriodService.MAX_AGREEMENT_MINUTES, message = "El saldo inicial no es válido")
         Integer openingBalanceMin,

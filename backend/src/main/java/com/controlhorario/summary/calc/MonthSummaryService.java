@@ -8,7 +8,6 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 
 import com.controlhorario.absence.AbsenceType;
 import com.controlhorario.calendar.calc.DayType;
@@ -28,18 +27,14 @@ import com.controlhorario.workday.calc.WorkdayResult;
  *   <li>vacaciones = jornadaDía de los días VACACIONES; puentes = jornadaDía de los PUENTE;</li>
  *   <li>diferencia = trabajado - teóricas, con signo;</li>
  *   <li>saldo de cierre = saldo de apertura + diferencia - puentes recuperables;</li>
- *   <li>teletrabajo: % casa = minutos en casa / trabajado; días casa = días CASA o MIXTO;</li>
- *   <li>imputaciones: aviso si JIRA ≠ IZERTIA o si cualquiera ≠ redondeado del día.</li>
+ *   <li>teletrabajo: % casa = minutos en casa / trabajado (el límite es solo este %); días casa = días CASA o
+ *   MIXTO, informativo.</li>
  * </ul>
  */
 public final class MonthSummaryService {
 
     public static final String MISSING_RECORD = "MISSING_RECORD";
-    public static final String JIRA_IZERTIA_MISMATCH = "JIRA_IZERTIA_MISMATCH";
-    public static final String JIRA_ROUNDED_MISMATCH = "JIRA_ROUNDED_MISMATCH";
-    public static final String IZERTIA_ROUNDED_MISMATCH = "IZERTIA_ROUNDED_MISMATCH";
     public static final String REMOTE_PCT_EXCEEDED = "REMOTE_PCT_EXCEEDED";
-    public static final String REMOTE_DAYS_EXCEEDED = "REMOTE_DAYS_EXCEEDED";
 
     public MonthSummary summarize(PeriodCalendar calendar, YearMonth month, Collection<WorkdayInput> workdays,
             Collection<AbsenceInput> absences, int openingBalanceMinutes, LocalDate today) {
@@ -73,7 +68,6 @@ public final class MonthSummaryService {
         int vacationMinutes = 0, bridgeMinutes = 0, workedMinutes = 0;
         int theoreticalToDate = 0, workedToDate = 0, bridgeToDate = 0;
         int remoteMinutes = 0, officeMinutes = 0, remoteDays = 0;
-        Integer jiraTotal = null, izertiaTotal = null;
 
         for (int i = 0; i < n; i++) {
             LocalDate date = dates.get(i);
@@ -116,8 +110,6 @@ public final class MonthSummaryService {
                 if (workday.location() == Location.CASA || workday.location() == Location.MIXTO) {
                     remoteDays++;
                 }
-                jiraTotal = sum(jiraTotal, workday.jiraMinutes());
-                izertiaTotal = sum(izertiaTotal, workday.izertiaMinutes());
             }
             if (isPast(date, workday != null, today)) {
                 theoreticalToDate += theoretical[i];
@@ -131,7 +123,6 @@ public final class MonthSummaryService {
         List<Integer> roundedList = rounding.distribute(java.util.Arrays.stream(worked).boxed().toList());
         List<DaySummary> days = new ArrayList<>(n);
         int accumulatedWorked = 0;
-        int imputationWarningDays = 0;
         for (int i = 0; i < n; i++) {
             LocalDate date = dates.get(i);
             accumulatedWorked += worked[i];
@@ -141,11 +132,6 @@ public final class MonthSummaryService {
             List<CalcIssue> warnings = new ArrayList<>();
             if (results[i] != null) {
                 warnings.addAll(results[i].warnings());
-                List<CalcIssue> imputation = imputationWarnings(workday, rounded);
-                if (!imputation.isEmpty()) {
-                    imputationWarningDays++;
-                    warnings.addAll(imputation);
-                }
             } else if (types[i] == DayType.LABORABLE && date.isBefore(today)
                     && (absence == null || absence.halfDay())) {
                 warnings.add(CalcIssue.of(MISSING_RECORD, "Día laborable sin fichaje ni ausencia"));
@@ -161,10 +147,6 @@ public final class MonthSummaryService {
             monthWarnings.add(CalcIssue.of(REMOTE_PCT_EXCEEDED, "Teletrabajo del " + remotePct
                     + " %: supera el máximo del " + rules.maxRemotePct() + " %"));
         }
-        if (remoteDays > rules.maxRemoteDaysMonth()) {
-            monthWarnings.add(CalcIssue.of(REMOTE_DAYS_EXCEEDED, remoteDays
-                    + " días de teletrabajo: supera el máximo de " + rules.maxRemoteDaysMonth() + " al mes"));
-        }
 
         int difference = workedMinutes - theoreticalMinutes;
         int differenceToDate = workedToDate - theoreticalToDate;
@@ -173,8 +155,7 @@ public final class MonthSummaryService {
                 theoreticalMinutes, vacationDays, vacationMinutes, bridgeDays, bridgeMinutes, workedMinutes,
                 roundedMinutes, difference, theoreticalToDate, workedToDate, differenceToDate, openingBalanceMinutes,
                 openingBalanceMinutes + difference - bridgeMinutes, remoteMinutes, officeMinutes, remotePct, remoteDays,
-                jiraTotal, izertiaTotal, imputationWarningDays, List.copyOf(monthWarnings), weeks(days),
-                List.copyOf(days));
+                List.copyOf(monthWarnings), weeks(days), List.copyOf(days));
     }
 
     /** Un día cuenta como pasado si es anterior a hoy, u hoy si ya está fichado. */
@@ -188,25 +169,6 @@ public final class MonthSummaryService {
             return MonthStatus.PAST;
         }
         return month.equals(current) ? MonthStatus.CURRENT : MonthStatus.FUTURE;
-    }
-
-    private static List<CalcIssue> imputationWarnings(WorkdayInput workday, int rounded) {
-        List<CalcIssue> warnings = new ArrayList<>();
-        Integer jira = workday.jiraMinutes();
-        Integer izertia = workday.izertiaMinutes();
-        if (jira != null && izertia != null && !Objects.equals(jira, izertia)) {
-            warnings.add(CalcIssue.of(JIRA_IZERTIA_MISMATCH, "JIRA (" + Minutes.format(jira)
-                    + ") no coincide con IZERTIA (" + Minutes.format(izertia) + ")"));
-        }
-        if (jira != null && jira != rounded) {
-            warnings.add(CalcIssue.of(JIRA_ROUNDED_MISMATCH, "JIRA (" + Minutes.format(jira)
-                    + ") no coincide con el redondeado (" + Minutes.format(rounded) + ")"));
-        }
-        if (izertia != null && izertia != rounded) {
-            warnings.add(CalcIssue.of(IZERTIA_ROUNDED_MISMATCH, "IZERTIA (" + Minutes.format(izertia)
-                    + ") no coincide con el redondeado (" + Minutes.format(rounded) + ")"));
-        }
-        return warnings;
     }
 
     private static List<WeekSummary> weeks(List<DaySummary> days) {
@@ -233,12 +195,5 @@ public final class MonthSummaryService {
             weeks.add(new WeekSummary(weekStart, weekEnd, theoretical, worked, rounded));
         }
         return List.copyOf(weeks);
-    }
-
-    private static Integer sum(Integer total, Integer value) {
-        if (value == null) {
-            return total;
-        }
-        return total == null ? value : total + value;
     }
 }

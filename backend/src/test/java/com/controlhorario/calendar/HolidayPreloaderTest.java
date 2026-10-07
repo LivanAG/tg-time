@@ -54,7 +54,7 @@ class HolidayPreloaderTest {
         Map<LocalDate, String> holidays = new LinkedHashMap<>();
         preloader.holidaysBetween(start, end).forEach(h -> holidays.put(h.date(), h.name()));
         PeriodCalendar calendar = new PeriodCalendar(new PeriodRules(start, end, 105600, 23, 480, 420, 20, 30, 15,
-                50, 8, 0, List.of(new DateRange(LocalDate.of(2026, 6, 15), LocalDate.of(2026, 9, 15))), holidays));
+                50, 0, List.of(new DateRange(LocalDate.of(2026, 6, 15), LocalDate.of(2026, 9, 15))), holidays));
 
         List<LocalDate> all = start.datesUntil(end.plusDays(1)).toList();
         assertThat(all.stream().filter(calendar::isWorkingDay)).hasSize(248);

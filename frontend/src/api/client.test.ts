@@ -132,8 +132,6 @@ describe('cliente de la API', () => {
         breaks: [],
         location: 'OFICINA',
         remoteMinutes: null,
-        jiraMinutes: null,
-        izertiaMinutes: null,
         notes: null,
         version: null,
       })
@@ -191,7 +189,6 @@ describe('cliente de la API', () => {
       dryRun: true,
       periodId: null,
       includeFuture: false,
-      includeImputations: true,
       markVacations: true,
       overwrite: false,
     })
@@ -200,7 +197,7 @@ describe('cliente de la API', () => {
     expect(form).toBeInstanceOf(FormData)
     expect((form.get('file') as File).name).toBe('HORAS.xlsx')
     expect(form.get('dryRun')).toBe('true')
-    expect(form.get('includeImputations')).toBe('true')
+    expect(form.get('markVacations')).toBe('true')
     expect(form.has('periodId')).toBe(false)
     // El navegador pone el boundary: no se fija Content-Type.
     expect(calls[0].headers.get('Content-Type')).toBeNull()

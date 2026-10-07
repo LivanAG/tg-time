@@ -8,7 +8,6 @@ public record DetectedSettings(
         Integer breakfastToleranceMin,
         Integer minLunchMin,
         Integer maxRemotePct,
-        Integer maxRemoteDaysMonth,
         Integer normalDayMinutes,
         Integer intensiveDayMinutes,
         Integer vacationDays,

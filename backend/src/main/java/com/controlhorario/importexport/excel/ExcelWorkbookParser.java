@@ -10,12 +10,10 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
@@ -38,14 +36,10 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook;
  *       columna A dice otra cosa se cuenta como corrección.</li>
  *   <li>Regla especial: comida escrita a mano en J sin horas en E/F. Si el tramo C/D empieza a partir
  *       de las 14:00 era la comida; si no, el día no se puede representar.</li>
- *   <li>JIRA/IZERTIA heredados: dos hojas con la misma secuencia (V, AC) por fila en al menos
- *       {@value #MIN_INHERITED_ROWS} filas con valor.</li>
  * </ul>
  */
 public final class ExcelWorkbookParser {
 
-    /** Filas iguales (con valor) entre dos hojas a partir de las cuales JIRA/IZERTIA se consideran copiados. */
-    public static final int MIN_INHERITED_ROWS = 10;
     /** Con la comida escrita a mano sin horas, un tramo C/D que empieza a partir de esta hora era la comida. */
     public static final LocalTime LUNCH_FROM = LocalTime.of(14, 0);
     /** Nombre de la hoja de resumen anual. */
@@ -53,21 +47,12 @@ public final class ExcelWorkbookParser {
 
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 
-    /** Cabecera de una hoja mensual (F1-F3, J1-J3, L1/L2). */
+    /** Cabecera de una hoja mensual (F1-F3, J1/J2, L1/L2). */
     private record Header(Integer minLunchMin, Integer breakfastToleranceMin, Integer maxRemotePct,
-            Integer maxRemoteDaysMonth, Integer normalDays, Integer normalDayMinutes, Integer intensiveDays,
-            Integer intensiveDayMinutes) {
+            Integer normalDays, Integer normalDayMinutes, Integer intensiveDays, Integer intensiveDayMinutes) {
     }
 
-    /** Imputaciones de una fila (columnas V y AC). */
-    private record Imputation(Integer jira, Integer izertia) {
-
-        boolean hasValue() {
-            return (jira != null && jira != 0) || (izertia != null && izertia != 0);
-        }
-    }
-
-    private record SheetData(ParsedSheet sheet, Header header, Map<Integer, Imputation> imputations) {
+    private record SheetData(ParsedSheet sheet, Header header) {
     }
 
     public ParsedWorkbook parse(Workbook workbook) {
@@ -84,7 +69,7 @@ public final class ExcelWorkbookParser {
             }
         }
         return new ParsedWorkbook(monthly.stream().map(SheetData::sheet).toList(), detectSettings(summary, monthly),
-                warnings, inheritedImputations(monthly));
+                warnings);
     }
 
     /** Mes de la hoja: el (año, mes) más frecuente en la columna A de las filas de datos (empate: el primero). */
@@ -104,11 +89,8 @@ public final class ExcelWorkbookParser {
         int rows = 0;
         List<Integer> correctedRows = new ArrayList<>();
         List<ParsedDay> days = new ArrayList<>();
-        Map<Integer, Imputation> imputations = new LinkedHashMap<>();
         for (int r : ExcelLayout.dataRows()) {
             Row row = sheet.getRow(r - 1);
-            imputations.put(r, new Imputation(safe(() -> ExcelCells.durationMinutes(cell(row, ExcelLayout.COL_JIRA))),
-                    safe(() -> ExcelCells.durationMinutes(cell(row, ExcelLayout.COL_IZERTIA)))));
             LocalDate date = ExcelLayout.dateOf(month, r);
             if (!YearMonth.from(date).equals(month)) {
                 continue;
@@ -129,7 +111,7 @@ public final class ExcelWorkbookParser {
                     + (n == 1 ? "fila " : "filas ") + ranges(correctedRows)
                     + "); se usa la fecha que corresponde a su posición en la hoja");
         }
-        return new SheetData(new ParsedSheet(name, month, rows, correctedRows.size(), days), header(sheet), imputations);
+        return new SheetData(new ParsedSheet(name, month, rows, correctedRows.size(), days), header(sheet));
     }
 
     private ParsedDay parseDay(Row row, String sheet, int r, LocalDate date, LocalDate written) {
@@ -183,11 +165,9 @@ public final class ExcelWorkbookParser {
             messages.add("Hay un tramo en casa (N/O) pero la ubicación no es mixta: se ignora");
         }
 
-        Integer jira = imputation(row, ExcelLayout.COL_JIRA, "JIRA (V)", messages);
-        Integer izertia = imputation(row, ExcelLayout.COL_IZERTIA, "IZERTIA (AC)", messages);
         Integer excelWorked = duration(row, ExcelLayout.COL_WORKED, "Total Día", messages);
 
-        return new ParsedDay(date, sheet, r, start, end, breaks, location, remoteMinutes, jira, izertia, excelWorked,
+        return new ParsedDay(date, sheet, r, start, end, breaks, location, remoteMinutes, excelWorked,
                 representable, errors, messages);
     }
 
@@ -245,21 +225,11 @@ public final class ExcelWorkbookParser {
         }
     }
 
-    private static Integer imputation(Row row, int column, String what, List<String> messages) {
-        Integer minutes = duration(row, column, what, messages);
-        if (minutes != null && minutes < 0) {
-            messages.add("Imputación " + what + " negativa: se ignora");
-            return null;
-        }
-        return minutes;
-    }
-
     private static Header header(Sheet sheet) {
         return new Header(
                 safe(() -> ExcelCells.durationMinutes(cell(sheet, "F1"))),
                 safe(() -> ExcelCells.durationMinutes(cell(sheet, "F2"))),
                 safe(() -> ExcelCells.integer(cell(sheet, "F3"))),
-                safe(() -> ExcelCells.integer(cell(sheet, "J3"))),
                 safe(() -> ExcelCells.integer(cell(sheet, "J1"))),
                 safe(() -> ExcelCells.durationMinutes(cell(sheet, "J2"))),
                 safe(() -> ExcelCells.integer(cell(sheet, "L1"))),
@@ -287,30 +257,7 @@ public final class ExcelWorkbookParser {
                 mode(sheets, h -> nonNegative(h.breakfastToleranceMin())),
                 mode(sheets, h -> nonNegative(h.minLunchMin())),
                 mode(sheets, h -> nonNegative(h.maxRemotePct())),
-                mode(sheets, h -> nonNegative(h.maxRemoteDaysMonth())),
                 normal, intensive, vacationDays, agreement);
-    }
-
-    private static List<String> inheritedImputations(List<SheetData> sheets) {
-        Set<String> inherited = new LinkedHashSet<>();
-        for (int i = 0; i < sheets.size(); i++) {
-            for (int j = i + 1; j < sheets.size(); j++) {
-                SheetData a = sheets.get(i);
-                SheetData b = sheets.get(j);
-                int same = 0;
-                for (int r : ExcelLayout.dataRows()) {
-                    Imputation ia = a.imputations().get(r);
-                    if (ia.hasValue() && ia.equals(b.imputations().get(r))) {
-                        same++;
-                    }
-                }
-                if (same >= MIN_INHERITED_ROWS) {
-                    inherited.add(a.sheet().name());
-                    inherited.add(b.sheet().name());
-                }
-            }
-        }
-        return sheets.stream().map(s -> s.sheet().name()).filter(inherited::contains).toList();
     }
 
     private static Integer mode(List<SheetData> sheets, Function<Header, Integer> value) {

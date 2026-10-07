@@ -38,10 +38,6 @@ public record MonthSummaryDto(
         double remotePct,
         int remoteDays,
         int maxRemotePct,
-        int maxRemoteDaysMonth,
-        Integer jiraMinutes,
-        Integer izertiaMinutes,
-        int imputationWarningDays,
         List<IssueDto> warnings,
         List<WeekDto> weeks,
         List<DayDto> days) {

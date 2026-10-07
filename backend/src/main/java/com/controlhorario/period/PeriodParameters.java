@@ -27,7 +27,5 @@ interface PeriodParameters {
 
     Integer maxRemotePct();
 
-    Integer maxRemoteDaysMonth();
-
     Integer openingBalanceMin();
 }

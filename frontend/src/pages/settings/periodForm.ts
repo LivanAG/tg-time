@@ -21,7 +21,6 @@ export interface PeriodFormValues {
   minLunchMin: string
   roundingStepMin: string
   maxRemotePct: string
-  maxRemoteDaysMonth: string
   openingBalanceMin: string
   intensiveRanges: IntensiveRangeDto[]
   preloadHolidays: boolean
@@ -39,7 +38,6 @@ export const PERIOD_FIELDS = [
   'minLunchMin',
   'roundingStepMin',
   'maxRemotePct',
-  'maxRemoteDaysMonth',
   'openingBalanceMin',
   'intensiveRanges',
   'preloadHolidays',
@@ -58,7 +56,6 @@ export const EXCEL_DEFAULTS: PeriodFormValues = {
   minLunchMin: '30',
   roundingStepMin: '15',
   maxRemotePct: '50',
-  maxRemoteDaysMonth: '8',
   openingBalanceMin: '0:00',
   intensiveRanges: [{ startDate: '2026-06-15', endDate: '2026-09-15' }],
   preloadHolidays: true,
@@ -77,7 +74,6 @@ export function toPeriodFormValues(period: PeriodDto): PeriodFormValues {
     minLunchMin: String(period.minLunchMin),
     roundingStepMin: String(period.roundingStepMin),
     maxRemotePct: String(period.maxRemotePct),
-    maxRemoteDaysMonth: String(period.maxRemoteDaysMonth),
     openingBalanceMin: formatMinutes(period.openingBalanceMin),
     intensiveRanges: period.intensiveRanges.map((r) => ({ ...r })),
     preloadHolidays: true,
@@ -144,7 +140,6 @@ export const periodSchema = z
     minLunchMin: intIn(0, 240),
     roundingStepMin: intIn(1, 60),
     maxRemotePct: intIn(0, 100),
-    maxRemoteDaysMonth: intIn(0, 31),
     openingBalanceMin: z
       .string()
       .trim()
@@ -205,7 +200,6 @@ function toBody(values: PeriodFormValues): Omit<PeriodDto, 'id' | 'version'> {
     minLunchMin: Number(values.minLunchMin),
     roundingStepMin: Number(values.roundingStepMin),
     maxRemotePct: Number(values.maxRemotePct),
-    maxRemoteDaysMonth: Number(values.maxRemoteDaysMonth),
     openingBalanceMin: parseDuration(values.openingBalanceMin) ?? 0,
     intensiveRanges: values.intensiveRanges.map((r) => ({ startDate: r.startDate, endDate: r.endDate })),
   }

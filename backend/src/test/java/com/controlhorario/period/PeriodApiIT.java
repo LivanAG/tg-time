@@ -61,7 +61,7 @@ class PeriodApiIT extends DomainApiTestSupport {
                 .andExpect(jsonPath("$.minLunchMin").value(30))
                 .andExpect(jsonPath("$.roundingStepMin").value(15))
                 .andExpect(jsonPath("$.maxRemotePct").value(50))
-                .andExpect(jsonPath("$.maxRemoteDaysMonth").value(8))
+                .andExpect(jsonPath("$.maxRemoteDaysMonth").doesNotExist())
                 .andExpect(jsonPath("$.openingBalanceMin").value(0))
                 .andExpect(jsonPath("$.intensiveRanges", hasSize(1)))
                 .andExpect(jsonPath("$.intensiveRanges[0].startDate").value("2026-06-15"))

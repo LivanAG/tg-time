@@ -38,8 +38,6 @@ public record DashboardDto(
             double remotePct,
             int remoteDays,
             int maxRemotePct,
-            int maxRemoteDaysMonth,
-            int imputationWarningDays,
             List<IssueDto> warnings) {
     }
 

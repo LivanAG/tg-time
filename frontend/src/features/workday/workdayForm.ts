@@ -20,8 +20,6 @@ export interface WorkdayFormValues {
   breaks: BreakFormValues[]
   location: WorkLocation
   remoteMinutes: string
-  jiraMinutes: string
-  izertiaMinutes: string
   notes: string
 }
 
@@ -32,8 +30,6 @@ export const WORKDAY_FIELDS = [
   'breaks',
   'location',
   'remoteMinutes',
-  'jiraMinutes',
-  'izertiaMinutes',
   'notes',
 ] as const
 
@@ -45,8 +41,6 @@ export function toFormValues(workday: WorkdayDto | null): WorkdayFormValues {
       breaks: [],
       location: 'OFICINA',
       remoteMinutes: '',
-      jiraMinutes: '',
-      izertiaMinutes: '',
       notes: '',
     }
   }
@@ -56,8 +50,6 @@ export function toFormValues(workday: WorkdayDto | null): WorkdayFormValues {
     breaks: workday.breaks.map((b) => ({ type: b.type, startTime: b.startTime, endTime: b.endTime })),
     location: workday.location,
     remoteMinutes: durationInputValue(workday.remoteMinutes),
-    jiraMinutes: durationInputValue(workday.jiraMinutes),
-    izertiaMinutes: durationInputValue(workday.izertiaMinutes),
     notes: workday.notes ?? '',
   }
 }
@@ -86,8 +78,6 @@ export function toRequest(values: WorkdayFormValues, version: number | null): Wo
     })),
     location: values.location,
     remoteMinutes: values.location === 'MIXTO' ? parseDuration(values.remoteMinutes) : null,
-    jiraMinutes: parseDuration(values.jiraMinutes),
-    izertiaMinutes: parseDuration(values.izertiaMinutes),
     notes: notes === '' ? null : notes,
     version,
   }
@@ -136,8 +126,6 @@ export function workdaySchema(rules: CalcRules) {
       ),
       location: z.enum(['OFICINA', 'CASA', 'MIXTO']),
       remoteMinutes: z.string(),
-      jiraMinutes: z.string(),
-      izertiaMinutes: z.string(),
       notes: z.string().max(NOTES_MAX, `Máximo ${NOTES_MAX} caracteres`),
     })
     .superRefine((values, ctx) => {
@@ -166,12 +154,6 @@ export function workdaySchema(rules: CalcRules) {
       if (values.location === 'MIXTO' && !isDurationOrEmpty(values.remoteMinutes)) {
         add(['remoteMinutes'], DURATION_MESSAGE)
         formatErrors = true
-      }
-      if (!isDurationOrEmpty(values.jiraMinutes)) {
-        add(['jiraMinutes'], DURATION_MESSAGE)
-      }
-      if (!isDurationOrEmpty(values.izertiaMinutes)) {
-        add(['izertiaMinutes'], DURATION_MESSAGE)
       }
       if (formatErrors) {
         return

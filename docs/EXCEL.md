@@ -22,7 +22,7 @@ Referencia para `importexport`. El fichero real está en
 | `F3` | % máximo de teletrabajo | 50 |
 | `J1` / `J2` | días a jornada normal / horas por día | 21 / 8:00 |
 | `L1` / `L2` | días a jornada intensiva / horas por día (solo meses mixtos) | 12 / 7:00 |
-| `J3` | días máximos de teletrabajo al mes | 8 |
+| `J3` | días máximos de teletrabajo al mes (la app no lo usa: el límite es solo el % de `F3`) | 8 |
 
 ## Filas de datos
 
@@ -53,8 +53,7 @@ fechas erróneas: en `Mayo 26` las filas 21-25 dicen 11-15/06 y en `Agosto` las 
 | M | ubicación: `O` oficina, `C` casa, `M` mixto | `location` (vacía → OFICINA con mensaje) |
 | N / O | inicio / fin del tramo en casa (MIXTO, "teletrabajo tardes") | `remoteMinutes = O - N` |
 | P | redondeado (MROUND por día) | no se importa: se recalcula sin deriva |
-| V | JIRA | `jiraMinutes` (solo con `includeImputations`) |
-| AC | IZERTIA | `izertiaMinutes` (solo con `includeImputations`) |
+| V / AC | JIRA / IZERTIA (imputaciones) | no se importan: la app no las usa |
 
 Las horas son fracciones de día en Excel (o fechas-hora con la parte de fecha a 1899/1900): se convierten
 a minutos redondeando al minuto. Se leen los **valores cacheados** de las celdas; nunca se evalúan fórmulas
@@ -73,9 +72,6 @@ Con las reglas anteriores, **los 222 días representables del Excel dan exactame
 
 - **Días futuros** (fecha > hoy en la zona del usuario): el Excel trae octubre-mayo ya rellenos copiando
   semanas anteriores. Estado `FUTURE`, se saltan salvo `includeFuture=true`.
-- **JIRA/IZERTIA heredados**: las columnas V y AC de varias hojas son idénticas fila a fila (copiadas de la
-  plantilla). Si la secuencia (V, AC) por número de fila de una hoja coincide con la de otra hoja en al
-  menos 10 filas con valor, se avisa en `warnings`. Por defecto no se importan (`includeImputations=false`).
 - **Vacaciones**: el Excel no las marca; se deducen. Día laborable del periodo (según los festivos del
   periodo), ≤ hoy, sin fichaje → se propone `VACACIONES` (acción IMPORT si `markVacations`). En el Excel
   real salen 13: 10/07 y 13-14, 17-21 y 24-28 de agosto.
@@ -95,7 +91,7 @@ Las ausencias propuestas siguen la misma lógica (`EXISTS` si ya hay ausencia o 
 
 ## Exportación
 
-`GET /api/export/xlsx?year=&month=` genera una hoja con el mismo diseño (cabecera F1-F3, J1-J3, L1/L2;
-filas 7-39 por la misma rejilla; columnas B-I, M, N/O, V, AC; L y P con los valores calculados; subtotales
+`GET /api/export/xlsx?year=&month=` genera una hoja con el mismo diseño (cabecera F1-F3, J1/J2, L1/L2;
+filas 7-39 por la misma rejilla; columnas B-I, M, N/O; L y P con los valores calculados; subtotales
 semanales en L/P de las filas 12, 19, 26, 33, 40; pie: C46 teóricas, C47 hechas, C48 faltan, C49 sobran
 y las vacaciones en C53). Debe poder **reimportarse** y dar los mismos datos (test de ida y vuelta).

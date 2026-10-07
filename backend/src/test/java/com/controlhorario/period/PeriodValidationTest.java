@@ -81,7 +81,7 @@ class PeriodValidationTest {
     }
 
     private static PeriodCreateRequest params(LocalDate start, LocalDate end) {
-        return new PeriodCreateRequest("2026-2027", start, end, 105600, 23, 480, 420, 20, 30, 15, 50, 8, 0,
+        return new PeriodCreateRequest("2026-2027", start, end, 105600, 23, 480, 420, 20, 30, 15, 50, 0,
                 List.of(), true);
     }
 }

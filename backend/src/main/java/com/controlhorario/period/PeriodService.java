@@ -172,7 +172,6 @@ public class PeriodService {
         period.setMinLunchMin(p.minLunchMin());
         period.setRoundingStepMin(p.roundingStepMin());
         period.setMaxRemotePct(p.maxRemotePct());
-        period.setMaxRemoteDaysMonth(p.maxRemoteDaysMonth());
         period.setOpeningBalanceMin(p.openingBalanceMin() == null ? 0 : p.openingBalanceMin());
     }
 }

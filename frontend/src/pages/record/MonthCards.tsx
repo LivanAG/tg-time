@@ -72,12 +72,6 @@ function DayCard({ day, isToday, onOpenDay }: { day: DayDto; isToday: boolean; o
           <span>{LOCATION_LABELS[workday.location]}</span>
           {workday.breaks.length > 0 && <span>{breaksSummary(workday.breaks)}</span>}
           {label && <span>{label}</span>}
-          {(workday.jiraMinutes !== null || workday.izertiaMinutes !== null) && (
-            <span>
-              JIRA {workday.jiraMinutes === null ? '—' : formatMinutes(workday.jiraMinutes)} · IZERTIA{' '}
-              {workday.izertiaMinutes === null ? '—' : formatMinutes(workday.izertiaMinutes)}
-            </span>
-          )}
         </div>
       )}
       {day.warnings.length > 0 && (

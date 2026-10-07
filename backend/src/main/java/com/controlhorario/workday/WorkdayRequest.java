@@ -33,14 +33,6 @@ public record WorkdayRequest(
         @Max(value = 1440, message = "No puede superar 24 horas")
         Integer remoteMinutes,
 
-        @PositiveOrZero(message = "Los minutos no pueden ser negativos")
-        @Max(value = 1440, message = "No puede superar 24 horas")
-        Integer jiraMinutes,
-
-        @PositiveOrZero(message = "Los minutos no pueden ser negativos")
-        @Max(value = 1440, message = "No puede superar 24 horas")
-        Integer izertiaMinutes,
-
         @Size(max = 500, message = "Las notas admiten como máximo 500 caracteres")
         String notes,
 

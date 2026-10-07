@@ -55,7 +55,7 @@ describe('Importar el Excel', () => {
     expect(within(preview).getByText('Vacaciones a crear').nextElementSibling).toHaveTextContent('13')
     expect(within(preview).getByText('Futuros descartados').nextElementSibling).toHaveTextContent('67')
     expect(
-      within(preview).getByText('Las columnas JIRA/IZERTIA parecen copiadas de la plantilla: no se importan'),
+      within(preview).getByText('1 día con fichaje queda fuera del periodo «2026-2027»'),
     ).toBeInTheDocument()
 
     // Tabla de días con estado, acción y comparación con el Excel.
@@ -81,7 +81,6 @@ describe('Importar el Excel', () => {
     expect(firstUpload.get('file')).toBe(file)
     expect(firstUpload.get('dryRun')).toBe('true')
     expect(firstUpload.get('includeFuture')).toBe('false')
-    expect(firstUpload.get('includeImputations')).toBe('false')
     expect(firstUpload.get('markVacations')).toBe('true')
     expect(firstUpload.get('overwrite')).toBe('false')
 

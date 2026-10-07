@@ -53,12 +53,6 @@ public class Workday {
     @Column(name = "remote_minutes")
     private Integer remoteMinutes;
 
-    @Column(name = "jira_minutes")
-    private Integer jiraMinutes;
-
-    @Column(name = "izertia_minutes")
-    private Integer izertiaMinutes;
-
     @Column(length = 500)
     private String notes;
 
@@ -112,10 +106,6 @@ public class Workday {
     public void setLocation(Location location) { this.location = location; }
     public Integer getRemoteMinutes() { return remoteMinutes; }
     public void setRemoteMinutes(Integer remoteMinutes) { this.remoteMinutes = remoteMinutes; }
-    public Integer getJiraMinutes() { return jiraMinutes; }
-    public void setJiraMinutes(Integer jiraMinutes) { this.jiraMinutes = jiraMinutes; }
-    public Integer getIzertiaMinutes() { return izertiaMinutes; }
-    public void setIzertiaMinutes(Integer izertiaMinutes) { this.izertiaMinutes = izertiaMinutes; }
     public String getNotes() { return notes; }
     public void setNotes(String notes) { this.notes = notes; }
     public List<WorkdayBreak> getBreaks() { return breaks; }

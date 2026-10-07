@@ -172,7 +172,6 @@ function Meter({ value, max, label }: { value: number; max: number; label: strin
 
 function RemoteCard({ month }: { month: DashboardMonthDto }) {
   const pctExceeded = month.remotePct > month.maxRemotePct
-  const daysExceeded = month.remoteDays > month.maxRemoteDaysMonth
   return (
     <Card title="Teletrabajo del mes" titleId="home-remote">
       <div className="space-y-4">
@@ -186,34 +185,23 @@ function RemoteCard({ month }: { month: DashboardMonthDto }) {
           </p>
           <Meter value={month.remotePct} max={month.maxRemotePct} label="Porcentaje de teletrabajo frente al máximo" />
         </div>
-        <div>
-          <p className="flex items-baseline justify-between text-sm">
-            <span className="text-slate-600">Días en casa o mixtos</span>
-            <span className={`font-semibold ${daysExceeded ? 'text-red-600' : 'text-slate-900'}`}>
-              {month.remoteDays} <span className="font-normal text-slate-500">/ máx. {month.maxRemoteDaysMonth}</span>
-            </span>
-          </p>
-          <Meter value={month.remoteDays} max={month.maxRemoteDaysMonth} label="Días de teletrabajo frente al máximo" />
-        </div>
+        <p className="flex items-baseline justify-between text-sm">
+          <span className="text-slate-600">Días en casa o mixtos</span>
+          <span className="font-semibold text-slate-900">{month.remoteDays}</span>
+        </p>
       </div>
     </Card>
   )
 }
 
 function WarningsCard({ month }: { month: DashboardMonthDto }) {
-  const clean = month.imputationWarningDays === 0 && month.warnings.length === 0
+  const clean = month.warnings.length === 0
   return (
     <Card title="Avisos del mes" titleId="home-warnings">
       {clean ? (
         <p className="text-sm text-emerald-700">Sin avisos este mes.</p>
       ) : (
         <div className="space-y-2">
-          {month.imputationWarningDays > 0 && (
-            <p className="text-sm text-amber-900">
-              <strong>{month.imputationWarningDays}</strong>{' '}
-              {month.imputationWarningDays === 1 ? 'día con avisos' : 'días con avisos'} de imputación (JIRA / IZERTIA).
-            </p>
-          )}
           <IssueList issues={month.warnings} />
           <Link to={`/registro/${month.month}`} className="inline-block text-sm font-medium text-sky-800 underline">
             Revisar en el registro

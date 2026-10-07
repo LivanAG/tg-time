@@ -13,9 +13,7 @@ public record WorkdayInput(
         LocalTime end,
         List<BreakInput> breaks,
         Location location,
-        Integer remoteMinutes,
-        Integer jiraMinutes,
-        Integer izertiaMinutes) {
+        Integer remoteMinutes) {
 
     public WorkdayInput {
         breaks = breaks == null ? List.of() : List.copyOf(breaks);

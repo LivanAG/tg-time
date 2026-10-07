@@ -188,40 +188,10 @@ class ExcelWorkbookParserRulesTest {
             number(s, "F3", 40);
             number(s, "J1", 10);
             time(s, "J2", "08:00");
-            number(s, "J3", 6);
             number(s, "L1", 12);
             time(s, "L2", "07:00");
         });
-        assertThat(parsed.settings()).isEqualTo(new DetectedSettings(15, 30, 40, 6, 480, 420, null, null));
-    }
-
-    @Test
-    void jiraAndIzertiaRepeatedInTenRowsOfTwoSheetsAreFlagged() {
-        XSSFWorkbook workbook = new XSSFWorkbook();
-        Sheet june = workbook.createSheet("Junio");
-        Sheet july = workbook.createSheet("Julio");
-        Sheet august = workbook.createSheet("Agosto");
-        fillMonth(june, JUNE);
-        fillMonth(july, YearMonth.of(2026, 7));
-        fillMonth(august, YearMonth.of(2026, 8));
-        int copied = 0;
-        for (int row : ExcelLayout.dataRows()) {
-            if (copied++ < ExcelWorkbookParser.MIN_INHERITED_ROWS) {
-                for (Sheet sheet : new Sheet[] {june, july}) {
-                    time(sheet, "V" + row, "07:15");
-                    time(sheet, "AC" + row, "07:15");
-                }
-                if (copied < ExcelWorkbookParser.MIN_INHERITED_ROWS) {
-                    time(august, "V" + row, "07:15");
-                    time(august, "AC" + row, "07:15");
-                }
-            }
-        }
-
-        ParsedWorkbook parsed = ExcelWorkbookReader.read(TestWorkbooks.bytes(workbook), new ExcelWorkbookParser()::parse);
-
-        // Junio y Julio coinciden en 10 filas; Agosto solo en 9 con cada una.
-        assertThat(parsed.inheritedImputationSheets()).containsExactly("Junio", "Julio");
+        assertThat(parsed.settings()).isEqualTo(new DetectedSettings(15, 30, 40, 480, 420, null, null));
     }
 
     @Test

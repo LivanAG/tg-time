@@ -55,8 +55,7 @@ class ExcelMonthWriterTest {
             assertThat(sheet.dateCorrections()).isZero();
         });
         assertThat(parsed.warnings()).isEmpty();
-        assertThat(parsed.inheritedImputationSheets()).isEmpty();
-        assertThat(parsed.settings()).isEqualTo(new DetectedSettings(20, 30, 50, 8, 480, 420, null, null));
+        assertThat(parsed.settings()).isEqualTo(new DetectedSettings(20, 30, 50, 480, 420, null, null));
 
         Map<LocalDate, WorkdayInput> expected = june.stream()
                 .collect(Collectors.toMap(WorkdayInput::date, Function.identity()));
@@ -137,13 +136,13 @@ class ExcelMonthWriterTest {
     }
 
     @Test
-    void mixedLocationOtherBreaksAndImputationsSurviveTheRoundTrip() {
+    void mixedLocationAndOtherBreaksSurviveTheRoundTrip() {
         LocalDate date = LocalDate.of(2026, 10, 5);
         WorkdayInput mixed = new WorkdayInput(date, LocalTime.of(8, 0), LocalTime.of(17, 0),
                 List.of(new BreakInput(BreakType.DESAYUNO, LocalTime.of(10, 0), LocalTime.of(10, 25)),
                         new BreakInput(BreakType.COMIDA, LocalTime.of(14, 0), LocalTime.of(14, 20)),
                         new BreakInput(BreakType.OTRA, LocalTime.of(16, 0), LocalTime.of(16, 10))),
-                Location.MIXTO, 120, 480, 465);
+                Location.MIXTO, 120);
         byte[] bytes = export(YearMonth.of(2026, 10), List.of(mixed));
 
         ParsedDay day = ExcelWorkbookReader.read(bytes, new ExcelWorkbookParser()::parse).days().get(0);
@@ -152,8 +151,6 @@ class ExcelMonthWriterTest {
         assertThat(day.breaks()).containsExactlyElementsOf(mixed.breaks());
         assertThat(day.location()).isEqualTo(Location.MIXTO);
         assertThat(day.remoteMinutes()).isEqualTo(120);
-        assertThat(day.jiraMinutes()).isEqualTo(480);
-        assertThat(day.izertiaMinutes()).isEqualTo(465);
         // 540 - 5 (desayuno) - 30 (comida mínima) - 10 (otra) = 495
         assertThat(day.excelWorkedMinutes()).isEqualTo(495);
         assertThat(day.representable()).isTrue();
