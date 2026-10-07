@@ -1,36 +1,71 @@
-import { Link, Route, Routes } from 'react-router'
+import { lazy, Suspense, type ReactNode } from 'react'
+import { Link, Navigate, Route, Routes } from 'react-router'
 
-import { ApiStatus } from './components/ApiStatus'
+import { AuthProvider } from './auth/AuthProvider'
+import { RequireAuth } from './auth/RequireAuth'
+import { Layout } from './components/Layout'
+import { Spinner } from './components/ui'
+import { DayEditorProvider } from './features/workday/DayEditorProvider'
+import { monthOf, todayIso } from './lib/dates'
+import { HomePage } from './pages/HomePage'
+import { LoginPage } from './pages/LoginPage'
+import { RecordPage } from './pages/record/RecordPage'
 
-export default function App() {
-  return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
-      <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-3">
-          <Link to="/" className="text-lg font-semibold">
-            Control Horario
-          </Link>
-          <ApiStatus />
-        </div>
-      </header>
-      <main className="mx-auto max-w-5xl px-4 py-8">
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </main>
-    </div>
-  )
+// Pantallas de uso menos frecuente: se cargan al entrar en ellas.
+const CalendarPage = lazy(() => import('./pages/CalendarPage').then((m) => ({ default: m.CalendarPage })))
+const SummaryPage = lazy(() => import('./pages/SummaryPage').then((m) => ({ default: m.SummaryPage })))
+const SettingsPage = lazy(() => import('./pages/settings/SettingsPage').then((m) => ({ default: m.SettingsPage })))
+
+function Lazy({ children }: { children: ReactNode }) {
+  return <Suspense fallback={<Spinner label="Cargando la pantalla…" />}>{children}</Suspense>
 }
 
-function Home() {
+/** Rutas de la app. QueryClientProvider y el router los pone main.tsx (o el test). */
+export default function App() {
   return (
-    <section className="space-y-2">
-      <h1 className="text-2xl font-semibold">Control Horario</h1>
-      <p className="text-slate-600">
-        Base del proyecto lista. El acceso, el registro diario y los resúmenes llegan en las siguientes fases.
-      </p>
-    </section>
+    <AuthProvider>
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route
+          element={
+            <RequireAuth>
+              <DayEditorProvider>
+                <Layout />
+              </DayEditorProvider>
+            </RequireAuth>
+          }
+        >
+          <Route index element={<HomePage />} />
+          <Route path="registro" element={<Navigate to={`/registro/${monthOf(todayIso())}`} replace />} />
+          <Route path="registro/:month" element={<RecordPage />} />
+          <Route
+            path="calendario"
+            element={
+              <Lazy>
+                <CalendarPage />
+              </Lazy>
+            }
+          />
+          <Route
+            path="resumen"
+            element={
+              <Lazy>
+                <SummaryPage />
+              </Lazy>
+            }
+          />
+          <Route
+            path="ajustes"
+            element={
+              <Lazy>
+                <SettingsPage />
+              </Lazy>
+            }
+          />
+          <Route path="*" element={<NotFound />} />
+        </Route>
+      </Routes>
+    </AuthProvider>
   )
 }
 
