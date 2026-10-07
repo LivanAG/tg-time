@@ -1,0 +1,63 @@
+# Producción en la VM de Oracle Cloud. Backend y frontend se descargan de GHCR (make deploy TAG=...).
+x-hardening: &hardening
+  restart: unless-stopped
+  security_opt: ["no-new-privileges:true"]
+  cap_drop: [ALL]
+  logging: { driver: json-file, options: { max-size: "10m", max-file: "5" } }
+
+services:
+  db:
+    <<: *hardening
+    cap_add: [CHOWN, SETUID, SETGID, FOWNER, DAC_OVERRIDE]   # mínimo que necesita postgres
+
+  backend:
+    <<: *hardening
+    build: !reset null                       # en prod solo se usan imágenes publicadas
+    read_only: true
+    tmpfs: [/tmp]
+    deploy: { resources: { limits: { memory: 768m, cpus: "1.0" } } }
+
+  frontend:
+    <<: *hardening
+    build: !reset null
+    read_only: true
+    tmpfs: [/tmp, /var/cache/nginx]
+
+  caddy:
+    <<: *hardening
+    image: caddy:2-alpine
+    cap_add: [NET_BIND_SERVICE]
+    ports: ["80:80", "443:443", "443:443/udp"]
+    environment:
+      DOMAIN: ${DOMAIN:?Define DOMAIN en .env}
+    volumes:
+      # Caddyfile: Let's Encrypt directo. Caddyfile.cloudflare: detrás de Cloudflare (Full strict).
+      - ./deploy/${CADDYFILE:-Caddyfile}:/etc/caddy/Caddyfile:ro
+      - ./deploy/certs:/certs:ro              # certificado de origen de Cloudflare (fuera de git)
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [edge]
+    depends_on:
+      frontend: { condition: service_healthy }
+
+  backup:
+    <<: *hardening
+    build: ./deploy/backup                   # postgres:16-alpine + gnupg; se construye en la VM
+    image: local/control-horario-backup
+    cap_add: [CHOWN, SETUID, SETGID, DAC_OVERRIDE]
+    environment:
+      PGHOST: db
+      PGDATABASE: ${DB_NAME}
+      PGUSER: ${DB_USER}
+      PGPASSWORD: ${DB_PASSWORD}
+      BACKUP_PASSPHRASE: ${BACKUP_PASSPHRASE:?Define BACKUP_PASSPHRASE en .env}
+      RETENTION_DAYS: 14
+      TZ: Europe/Madrid
+    volumes: ["./backups:/backups"]
+    networks: [internal]
+    depends_on:
+      db: { condition: service_healthy }
+
+volumes:
+  caddy_data: {}
+  caddy_config: {}

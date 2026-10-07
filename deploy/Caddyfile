@@ -1,0 +1,14 @@
+# HTTPS directo con Let's Encrypt (sin Cloudflare). DOMAIN viene de .env.
+# Sin dominio propio sirve un nombre de sslip.io, p. ej. horas.129-151-10-20.sslip.io
+{$DOMAIN} {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+	reverse_proxy frontend:8080 {
+		# IP real del cliente para el backend (rate limit, audit_log).
+		header_up X-Forwarded-For {client_ip}
+		header_down -Server
+	}
+}

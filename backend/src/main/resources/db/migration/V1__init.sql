@@ -1,0 +1,5 @@
+-- Migración inicial vacía: deja Flyway inicializado (flyway_schema_history).
+-- Las tablas del modelo de datos se añaden en las fases siguientes:
+--   fase 2: users, refresh_tokens, audit_log
+--   fase 3: work_periods, intensive_ranges, holidays, absences
+--   fase 4: workdays, workday_breaks

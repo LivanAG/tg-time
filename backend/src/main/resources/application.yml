@@ -1,0 +1,72 @@
+spring:
+  application:
+    name: control-horario
+  profiles:
+    default: dev
+  datasource:
+    # SPRING_DATASOURCE_URL, si existe, tiene prioridad.
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:control_horario}
+    username: ${DB_USER:ch_app}
+    password: ${DB_PASSWORD:}
+    hikari:
+      maximum-pool-size: 5
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    locations: classpath:db/migration
+  mvc:
+    problemdetails:
+      enabled: true
+
+server:
+  # Detrás de Caddy + nginx: toma esquema e IP real de X-Forwarded-*.
+  forward-headers-strategy: framework
+  shutdown: graceful
+  error:
+    include-stacktrace: never
+    include-message: never
+  tomcat:
+    threads:
+      max: 20
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+
+app:
+  jwt-secret: ${JWT_SECRET:}
+
+---
+spring:
+  config:
+    activate:
+      on-profile: dev
+
+springdoc:
+  api-docs:
+    enabled: true
+  swagger-ui:
+    enabled: true
+
+---
+spring:
+  config:
+    activate:
+      on-profile: prod
+
+logging:
+  level:
+    root: INFO

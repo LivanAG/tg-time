@@ -1,0 +1,21 @@
+# Secretos y datos locales
+.env
+deploy/certs/
+backups/
+.deployed-tag
+deploy-history.log
+
+# Backend
+backend/target/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# Varios
+*.log
+.DS_Store
+.idea/
+*.iml
+.vscode/*
+!.vscode/extensions.json

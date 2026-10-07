@@ -1,0 +1,14 @@
+services:
+  db:
+    ports: ["127.0.0.1:5432:5432"]          # para conectar con DBeaver/IntelliJ
+  backend:
+    ports: ["127.0.0.1:8080:8080"]          # Swagger en /swagger-ui.html (perfil dev)
+  frontend:
+    build: { context: ./frontend, dockerfile: Dockerfile.dev }
+    image: local/control-horario-frontend-dev
+    environment:
+      API_PROXY_TARGET: http://backend:8080
+    ports: ["127.0.0.1:5173:5173"]
+    volumes: ["./frontend:/app", "/app/node_modules"]
+networks:
+  internal: { internal: false }            # en dev se publican puertos y se permite salida
