@@ -1,5 +1,8 @@
 package com.controlhorario.common.config;
 
+import com.controlhorario.auth.AuthRateLimitFilter;
+import com.controlhorario.auth.AuthRateLimiter;
+import com.controlhorario.auth.OriginCheckFilter;
 import com.controlhorario.common.web.ProblemResponses;
 
 import org.springframework.context.annotation.Bean;
@@ -16,6 +19,7 @@ import org.springframework.security.oauth2.server.resource.web.DefaultBearerToke
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.AccessDeniedHandler;
+import org.springframework.security.web.header.HeaderWriterFilter;
 import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter.ReferrerPolicy;
 
 @Configuration
@@ -27,8 +31,8 @@ public class SecurityConfig {
             + "style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'";
 
     @Bean
-    SecurityFilterChain securityFilterChain(HttpSecurity http, JwtAuthenticationConverter jwtAuthenticationConverter)
-            throws Exception {
+    SecurityFilterChain securityFilterChain(HttpSecurity http, JwtAuthenticationConverter jwtAuthenticationConverter,
+            AppProperties properties, AuthRateLimiter authRateLimiter) throws Exception {
         AuthenticationEntryPoint unauthorized = (request, response, ex) ->
                 ProblemResponses.write(response, HttpStatus.UNAUTHORIZED, "Autenticación requerida");
         AccessDeniedHandler forbidden = (request, response, ex) ->
@@ -58,7 +62,11 @@ public class SecurityConfig {
                 .headers(headers -> headers
                         .contentSecurityPolicy(csp -> csp.policyDirectives(CONTENT_SECURITY_POLICY))
                         .referrerPolicy(referrer -> referrer.policy(ReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN))
-                        .httpStrictTransportSecurity(hsts -> hsts.includeSubDomains(true).maxAgeInSeconds(31_536_000)));
+                        .httpStrictTransportSecurity(hsts -> hsts.includeSubDomains(true).maxAgeInSeconds(31_536_000)))
+                // POST /api/auth/{login,register,refresh,logout}: primero Origin (403) y luego rate
+                // limit por IP y endpoint (429). Tras HeaderWriterFilter: los errores llevan cabeceras.
+                .addFilterAfter(new OriginCheckFilter(properties.allowedOrigins()), HeaderWriterFilter.class)
+                .addFilterAfter(new AuthRateLimitFilter(authRateLimiter), OriginCheckFilter.class);
         return http.build();
     }
 
