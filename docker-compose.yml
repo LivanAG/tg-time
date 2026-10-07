@@ -1,21 +1,22 @@
-# Base común. Desarrollo:  docker compose -f docker-compose.yml -f docker-compose.dev.yml up
-#              Producción:  docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
-# (o simplemente `make dev` / `make deploy`).
+# Base común.
+#   Local:      docker compose up --build        (carga también docker-compose.override.yml)
+#   Producción: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d   (o make deploy)
+# Los valores por defecto (:-...) son SOLO para desarrollo local; docker-compose.prod.yml exige los reales.
 name: control-horario
 
 services:
   db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: ${DB_NAME}
-      POSTGRES_USER: ${DB_USER}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME:-control_horario}
+      POSTGRES_USER: ${DB_USER:-ch_app}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-controlhorario-dev}
     volumes: [pgdata:/var/lib/postgresql/data]
     networks: [internal]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
-      interval: 10s
-      retries: 5
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-ch_app} -d ${DB_NAME:-control_horario}"]
+      interval: 5s
+      retries: 10
 
   backend:
     build: ./backend
@@ -24,10 +25,16 @@ services:
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILE:-dev}
       DB_HOST: db
       DB_PORT: 5432
-      DB_NAME: ${DB_NAME}
-      DB_USER: ${DB_USER}
-      DB_PASSWORD: ${DB_PASSWORD}
-      JWT_SECRET: ${JWT_SECRET}
+      DB_NAME: ${DB_NAME:-control_horario}
+      DB_USER: ${DB_USER:-ch_app}
+      DB_PASSWORD: ${DB_PASSWORD:-controlhorario-dev}
+      JWT_SECRET: ${JWT_SECRET:-dev-only-jwt-secret-not-for-production-000000}
+      APP_ADMIN_EMAIL: ${APP_ADMIN_EMAIL:-admin@controlhorario.local}
+      APP_ADMIN_PASSWORD: ${APP_ADMIN_PASSWORD:-controlhorario-dev}
+      APP_ADMIN_NAME: ${APP_ADMIN_NAME:-Administrador}
+      APP_REGISTRATION_OPEN: ${APP_REGISTRATION_OPEN:-false}
+      APP_ALLOWED_ORIGINS: ${APP_ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:8080}
+      APP_COOKIE_SECURE: ${APP_COOKIE_SECURE:-false}
       TZ: Europe/Madrid
     depends_on:
       db: { condition: service_healthy }

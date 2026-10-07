@@ -1,4 +1,5 @@
-# Producción en la VM de Oracle Cloud. Backend y frontend se descargan de GHCR (make deploy TAG=...).
+# Producción en la VM de Oracle Cloud (make deploy TAG=...). Backend y frontend se descargan de GHCR.
+# Aquí se exigen los valores reales: si falta alguno, docker compose se niega a arrancar.
 x-hardening: &hardening
   restart: unless-stopped
   security_opt: ["no-new-privileges:true"]
@@ -9,6 +10,10 @@ services:
   db:
     <<: *hardening
     cap_add: [CHOWN, SETUID, SETGID, FOWNER, DAC_OVERRIDE]   # mínimo que necesita postgres
+    environment:
+      POSTGRES_DB: ${DB_NAME:?Define DB_NAME en .env}
+      POSTGRES_USER: ${DB_USER:?Define DB_USER en .env}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Define DB_PASSWORD en .env}
 
   backend:
     <<: *hardening
@@ -16,6 +21,17 @@ services:
     read_only: true
     tmpfs: [/tmp]
     deploy: { resources: { limits: { memory: 768m, cpus: "1.0" } } }
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      DB_NAME: ${DB_NAME:?Define DB_NAME en .env}
+      DB_USER: ${DB_USER:?Define DB_USER en .env}
+      DB_PASSWORD: ${DB_PASSWORD:?Define DB_PASSWORD en .env}
+      JWT_SECRET: ${JWT_SECRET:?Define JWT_SECRET en .env}
+      # Solo para crear el primer usuario; después se pueden borrar del .env.
+      APP_ADMIN_EMAIL: ${APP_ADMIN_EMAIL:-}
+      APP_ADMIN_PASSWORD: ${APP_ADMIN_PASSWORD:-}
+      APP_ALLOWED_ORIGINS: https://${DOMAIN:?Define DOMAIN en .env}
+      APP_COOKIE_SECURE: "true"
 
   frontend:
     <<: *hardening
@@ -31,9 +47,7 @@ services:
     environment:
       DOMAIN: ${DOMAIN:?Define DOMAIN en .env}
     volumes:
-      # Caddyfile: Let's Encrypt directo. Caddyfile.cloudflare: detrás de Cloudflare (Full strict).
-      - ./deploy/${CADDYFILE:-Caddyfile}:/etc/caddy/Caddyfile:ro
-      - ./deploy/certs:/certs:ro              # certificado de origen de Cloudflare (fuera de git)
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
     networks: [edge]
@@ -47,9 +61,9 @@ services:
     cap_add: [CHOWN, SETUID, SETGID, DAC_OVERRIDE]
     environment:
       PGHOST: db
-      PGDATABASE: ${DB_NAME}
-      PGUSER: ${DB_USER}
-      PGPASSWORD: ${DB_PASSWORD}
+      PGDATABASE: ${DB_NAME:?Define DB_NAME en .env}
+      PGUSER: ${DB_USER:?Define DB_USER en .env}
+      PGPASSWORD: ${DB_PASSWORD:?Define DB_PASSWORD en .env}
       BACKUP_PASSPHRASE: ${BACKUP_PASSPHRASE:?Define BACKUP_PASSPHRASE en .env}
       RETENTION_DAYS: 14
       TZ: Europe/Madrid

@@ -1,0 +1,38 @@
+# Festivos precargados al crear un periodo (Comunidad de Madrid y Madrid capital).
+# fecha,nombre,ámbito (NACIONAL | AUTONOMICO | LOCAL | EMPRESA). El usuario puede editarlos.
+# Los de 2026-2027 cuadran con los días no laborables del Excel HORAS_IZERTIS_2026-27
+# (24 y 31 de diciembre son días de convenio de empresa). Revisa cada año el BOCM.
+2026-01-01,Año Nuevo,NACIONAL
+2026-01-06,Epifanía del Señor,NACIONAL
+2026-03-19,San José,AUTONOMICO
+2026-04-02,Jueves Santo,AUTONOMICO
+2026-04-03,Viernes Santo,NACIONAL
+2026-05-01,Fiesta del Trabajo,NACIONAL
+2026-05-02,Fiesta de la Comunidad de Madrid,AUTONOMICO
+2026-05-15,San Isidro,LOCAL
+2026-08-15,Asunción de la Virgen,NACIONAL
+2026-10-12,Fiesta Nacional de España,NACIONAL
+2026-11-02,Lunes siguiente a Todos los Santos,AUTONOMICO
+2026-11-09,Nuestra Señora de la Almudena,LOCAL
+2026-12-07,Lunes siguiente al Día de la Constitución,AUTONOMICO
+2026-12-08,Inmaculada Concepción,NACIONAL
+2026-12-24,Nochebuena (convenio),EMPRESA
+2026-12-25,Natividad del Señor,NACIONAL
+2026-12-31,Nochevieja (convenio),EMPRESA
+2027-01-01,Año Nuevo,NACIONAL
+2027-01-06,Epifanía del Señor,NACIONAL
+2027-03-19,San José,AUTONOMICO
+2027-03-25,Jueves Santo,AUTONOMICO
+2027-03-26,Viernes Santo,NACIONAL
+2027-05-01,Fiesta del Trabajo,NACIONAL
+2027-05-02,Fiesta de la Comunidad de Madrid,AUTONOMICO
+2027-05-15,San Isidro,LOCAL
+2027-08-15,Asunción de la Virgen,NACIONAL
+2027-10-12,Fiesta Nacional de España,NACIONAL
+2027-11-01,Todos los Santos,NACIONAL
+2027-11-09,Nuestra Señora de la Almudena,LOCAL
+2027-12-06,Día de la Constitución Española,NACIONAL
+2027-12-08,Inmaculada Concepción,NACIONAL
+2027-12-24,Nochebuena (convenio),EMPRESA
+2027-12-25,Natividad del Señor,NACIONAL
+2027-12-31,Nochevieja (convenio),EMPRESA

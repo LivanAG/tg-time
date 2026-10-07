@@ -1,8 +1,11 @@
+# Desarrollo local. `docker compose up` carga este fichero automáticamente.
+#   http://localhost:5173  aplicación (Vite con recarga en caliente)
+#   http://localhost:8080  API directa (Swagger en /swagger-ui.html)
 services:
   db:
     ports: ["127.0.0.1:5432:5432"]          # para conectar con DBeaver/IntelliJ
   backend:
-    ports: ["127.0.0.1:8080:8080"]          # Swagger en /swagger-ui.html (perfil dev)
+    ports: ["127.0.0.1:8080:8080"]
   frontend:
     build: { context: ./frontend, dockerfile: Dockerfile.dev }
     image: local/control-horario-frontend-dev
@@ -11,4 +14,4 @@ services:
     ports: ["127.0.0.1:5173:5173"]
     volumes: ["./frontend:/app", "/app/node_modules"]
 networks:
-  internal: { internal: false }            # en dev se publican puertos y se permite salida
+  internal: { internal: false }            # en local se publican puertos

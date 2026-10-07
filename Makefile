@@ -6,7 +6,7 @@ REGISTRY ?= $(or $(shell sed -n 's/^REGISTRY=//p' .env 2>/dev/null),local)
 TAG ?= $(or $(shell cat .deployed-tag 2>/dev/null),latest)
 export REGISTRY TAG
 
-COMPOSE_DEV := docker compose -f docker-compose.yml -f docker-compose.dev.yml
+COMPOSE_DEV := docker compose
 COMPOSE_PROD := docker compose -f docker-compose.yml -f docker-compose.prod.yml
 COMPOSE := $(if $(filter prod,$(PROFILE)),$(COMPOSE_PROD),$(COMPOSE_DEV))
 
@@ -21,7 +21,7 @@ help: ## Muestra esta ayuda
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
 
 # ---------- desarrollo ----------
-dev: .env ## Levanta db, backend y frontend con recarga en caliente (http://localhost:5173)
+dev: ## Levanta db, backend y frontend con recarga en caliente (http://localhost:5173)
 	$(COMPOSE_DEV) up --build
 
 down: ## Para los contenedores (conserva los datos)

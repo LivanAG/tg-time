@@ -19,6 +19,10 @@ spring:
   mvc:
     problemdetails:
       enabled: true
+  servlet:
+    multipart:
+      max-file-size: 2MB
+      max-request-size: 3MB
 
 server:
   # Detrás de Caddy + nginx: toma esquema e IP real de X-Forwarded-*.
@@ -60,6 +64,11 @@ springdoc:
     enabled: true
   swagger-ui:
     enabled: true
+
+app:
+  jwt-secret: ${JWT_SECRET:dev-only-jwt-secret-not-for-production-000000}
+  cookie-secure: false
+  allowed-origins: http://localhost:5173,http://localhost:8080
 
 ---
 spring:

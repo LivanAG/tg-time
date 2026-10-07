@@ -1,4 +1,4 @@
-# HTTPS directo con Let's Encrypt (sin Cloudflare). DOMAIN viene de .env.
+# HTTPS automático con Let's Encrypt. DOMAIN viene de .env.
 # Sin dominio propio sirve un nombre de sslip.io, p. ej. horas.129-151-10-20.sslip.io
 {$DOMAIN} {
 	encode zstd gzip
@@ -7,7 +7,8 @@
 		-Server
 	}
 	reverse_proxy frontend:8080 {
-		# IP real del cliente para el backend (rate limit, audit_log).
+		# IP real del cliente para el backend (rate limit, audit_log). Caddy descarta la que
+		# mande el cliente, así que no se puede falsificar.
 		header_up X-Forwarded-For {client_ip}
 		header_down -Server
 	}
