@@ -68,8 +68,3 @@ export function parseDuration(value: string | null | undefined): number | null {
 export function durationInputValue(minutes: number | null | undefined): string {
   return minutes === null || minutes === undefined ? '' : formatMinutes(minutes)
 }
-
-/** Hora actual "HH:mm" del navegador (para los botones "Ahora"). */
-export function currentTime(now: Date = new Date()): string {
-  return minutesToTime(now.getHours() * 60 + now.getMinutes())
-}

@@ -25,6 +25,7 @@ import com.controlhorario.workday.WorkdayRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
+import org.springframework.transaction.support.TransactionTemplate;
 
 class PeriodApiIT extends DomainApiTestSupport {
 
@@ -42,6 +43,48 @@ class PeriodApiIT extends DomainApiTestSupport {
 
     @Autowired
     AuditLogRepository auditLog;
+
+    @Autowired
+    WorkPeriodRepository periods;
+
+    @Autowired
+    TransactionTemplate tx;
+
+    @Test
+    void theNewPeriodIsSelectedAndTheSelectionCanBeChanged() throws Exception {
+        User user = newUser();
+        UUID current = createExcelPeriod(user);
+        mvc.perform(get("/api/periods/" + current).with(as(user))).andExpect(jsonPath("$.selected").value(true));
+
+        UUID next = createPeriod(user, period("2027-2028", "2027-05-26", "2028-05-25"));
+        mvc.perform(get("/api/periods").with(as(user)))
+                .andExpect(jsonPath("$[0].id").value(next.toString()))
+                .andExpect(jsonPath("$[0].selected").value(true))
+                .andExpect(jsonPath("$[1].selected").value(false));
+
+        // Seleccionar no cambia la versión (no invalida un formulario de edición abierto).
+        mvc.perform(put("/api/periods/" + current + "/select").with(as(user))).andExpect(status().isNoContent());
+        mvc.perform(get("/api/periods/" + current).with(as(user)))
+                .andExpect(jsonPath("$.selected").value(true))
+                .andExpect(jsonPath("$.version").value(0));
+        mvc.perform(get("/api/periods/" + next).with(as(user))).andExpect(jsonPath("$.selected").value(false));
+
+        // Sin ninguno marcado: el que contiene hoy (07/10/2026), aunque haya otro más reciente.
+        tx.executeWithoutResult(status -> periods.clearSelected(user.getId()));
+        mvc.perform(get("/api/periods").with(as(user)))
+                .andExpect(jsonPath("$[0].selected").value(false))
+                .andExpect(jsonPath("$[1].id").value(current.toString()))
+                .andExpect(jsonPath("$[1].selected").value(true));
+
+        // Borrado el que contiene hoy y sin ninguno marcado: el más reciente.
+        mvc.perform(delete("/api/periods/" + current).with(as(user))).andExpect(status().isNoContent());
+        mvc.perform(get("/api/periods").with(as(user)))
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].selected").value(true));
+
+        User intruder = newUser();
+        mvc.perform(put("/api/periods/" + next + "/select").with(as(intruder))).andExpect(status().isNotFound());
+    }
 
     @Test
     void createsReadsUpdatesAndDeletesAPeriod() throws Exception {
@@ -175,30 +218,57 @@ class PeriodApiIT extends DomainApiTestSupport {
     }
 
     @Test
-    void periodsOfTheSameUserCannotOverlap() throws Exception {
+    void overlappingPeriodsHaveTheirOwnWorkdaysAndAbsences() throws Exception {
         User user = newUser();
-        createExcelPeriod(user);
+        LocalDate june1 = LocalDate.of(2026, 6, 1);
+        LocalDate july10 = LocalDate.of(2026, 7, 10);
+        UUID real = createExcelPeriod(user);
+        putWorkday(user, june1, referenceDay()).andExpect(status().isOk());
+        putAbsence(user, july10, "VACACIONES", false).andExpect(status().isOk());
 
-        postPeriod(user, period("Solapado", "2027-01-01", "2027-12-31"))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.status").value(409));
-
-        // Justo a continuación sí se puede, y la lista sale con el más reciente primero.
-        UUID next = createPeriod(user, period("2027-2028", "2027-05-26", "2028-05-25"));
+        // Un periodo de pruebas que se solapa con el real; al crearlo queda seleccionado.
+        UUID test = createPeriod(user, period("Pruebas", "2026-06-01", "2027-05-31"));
         mvc.perform(get("/api/periods").with(as(user)))
                 .andExpect(jsonPath("$", hasSize(2)))
-                .andExpect(jsonPath("$[0].name").value("2027-2028"))
-                .andExpect(jsonPath("$[1].name").value("2026-2027"));
+                .andExpect(jsonPath("$[0].name").value("Pruebas"));
+        Map<String, Object> shorter = referenceDay();
+        shorter.put("endTime", "16:00");
+        putWorkday(user, june1, shorter).andExpect(status().isOk());
 
-        Map<String, Object> moved = period("2027-2028", "2027-05-25", "2028-05-25");
-        moved.remove("preloadHolidays");
-        moved.put("version", 0);
-        mvc.perform(put("/api/periods/" + next).with(as(user))
-                        .contentType(MediaType.APPLICATION_JSON).content(json(moved)))
-                .andExpect(status().isConflict());
+        // El mismo día tiene un fichaje distinto en cada periodo; sin periodId, el seleccionado.
+        mvc.perform(get("/api/workdays/2026-06-01").with(as(user)))
+                .andExpect(jsonPath("$.endTime").value("16:00"));
+        mvc.perform(get("/api/workdays/2026-06-01").param("periodId", real.toString()).with(as(user)))
+                .andExpect(jsonPath("$.endTime").value("17:59"));
+        mvc.perform(get("/api/absences/2026-07-10").with(as(user))).andExpect(status().isNotFound());
+        mvc.perform(get("/api/absences/2026-07-10").param("periodId", real.toString()).with(as(user)))
+                .andExpect(status().isOk());
+        mvc.perform(get("/api/summary/month").param("year", "2026").param("month", "6")
+                        .param("periodId", real.toString()).with(as(user)))
+                .andExpect(jsonPath("$.workedMinutes").value(604));
+        mvc.perform(get("/api/summary/month").param("year", "2026").param("month", "6")
+                        .param("periodId", test.toString()).with(as(user)))
+                .andExpect(jsonPath("$.workedMinutes").value(485));
 
-        // Otro usuario puede tener un periodo con las mismas fechas.
-        createExcelPeriod(newUser());
+        // Fuera de las fechas del periodo no se puede fichar.
+        putWorkday(user, LocalDate.of(2026, 5, 29), referenceDay())
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors[0].field").value("date"));
+
+        // No se puede acortar un periodo dejando registros fuera.
+        Map<String, Object> shrunk = period("2026-2027", "2026-06-02", "2027-05-25");
+        shrunk.remove("preloadHolidays");
+        shrunk.put("version", 0);
+        mvc.perform(put("/api/periods/" + real).with(as(user))
+                        .contentType(MediaType.APPLICATION_JSON).content(json(shrunk)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors[0].field").value("startDate"));
+
+        // Borrar el de pruebas no toca los registros del real.
+        mvc.perform(delete("/api/periods/" + test).with(as(user))).andExpect(status().isNoContent());
+        assertThat(workdays.findByPeriodIdAndDate(test, june1)).isEmpty();
+        assertThat(workdays.findByPeriodIdAndDate(real, june1)).isPresent();
+        assertThat(absences.findByPeriodIdAndDate(real, july10)).isPresent();
     }
 
     @Test
@@ -258,7 +328,7 @@ class PeriodApiIT extends DomainApiTestSupport {
     }
 
     @Test
-    void deletingAPeriodKeepsWorkdaysAndAbsences() throws Exception {
+    void deletingAPeriodDeletesItsWorkdaysAndAbsences() throws Exception {
         User user = newUser();
         UUID id = createExcelPeriod(user);
         putWorkday(user, LocalDate.of(2026, 5, 26), referenceDay()).andExpect(status().isOk());
@@ -266,12 +336,12 @@ class PeriodApiIT extends DomainApiTestSupport {
 
         mvc.perform(delete("/api/periods/" + id).with(as(user))).andExpect(status().isNoContent());
 
-        assertThat(workdays.existsByUserIdAndDate(user.getId(), LocalDate.of(2026, 5, 26))).isTrue();
-        assertThat(absences.findByUserIdAndDate(user.getId(), LocalDate.of(2026, 7, 10))).isPresent();
-        // Sin periodo, el fichaje se sigue viendo con las reglas por defecto.
+        assertThat(workdays.findByPeriodIdAndDate(id, LocalDate.of(2026, 5, 26))).isEmpty();
+        assertThat(absences.findByPeriodIdAndDate(id, LocalDate.of(2026, 7, 10))).isEmpty();
+        // Sin periodos, el registro diario pide crear uno.
         mvc.perform(get("/api/workdays/2026-05-26").with(as(user)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.totals.workedMinutes").value(604));
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors[0].field").value("periodId"));
     }
 
     @Test

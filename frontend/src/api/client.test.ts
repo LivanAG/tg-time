@@ -126,12 +126,15 @@ describe('cliente de la API', () => {
     })
 
     const error = await workdaysApi
-      .save('2026-10-07', {
+      .save('2026-10-07', 'period-1', {
         startTime: '17:00',
         endTime: '08:00',
         breaks: [],
         location: 'OFICINA',
-        remoteMinutes: null,
+        officeStart: null,
+        officeEnd: null,
+        homeStart: null,
+        homeEnd: null,
         notes: null,
         version: null,
       })

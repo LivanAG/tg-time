@@ -12,6 +12,9 @@ public record ImportWorkdayDto(
         @JsonFormat(pattern = "HH:mm") LocalTime endTime,
         List<ImportBreakDto> breaks,
         Location location,
-        Integer remoteMinutes,
+        @JsonFormat(pattern = "HH:mm") LocalTime officeStart,
+        @JsonFormat(pattern = "HH:mm") LocalTime officeEnd,
+        @JsonFormat(pattern = "HH:mm") LocalTime homeStart,
+        @JsonFormat(pattern = "HH:mm") LocalTime homeEnd,
         String notes) {
 }

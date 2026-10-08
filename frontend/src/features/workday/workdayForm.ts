@@ -2,8 +2,8 @@ import { z } from 'zod'
 
 import type { BreakType, WorkLocation, WorkdayDto, WorkdayRequest } from '../../api/types'
 import { apiFieldToPath } from '../../lib/formErrors'
-import { durationInputValue, normalizeTime, parseDuration, TIME_PATTERN } from '../../lib/time'
-import { validateWorkday, type CalcRules, type CalcWorkday } from '../../lib/workdayCalc'
+import { normalizeTime, TIME_PATTERN } from '../../lib/time'
+import { mixedBounds, validateWorkday, type CalcRules, type CalcWorkday } from '../../lib/workdayCalc'
 
 export const NOTES_MAX = 500
 
@@ -13,13 +13,19 @@ export interface BreakFormValues {
   endTime: string
 }
 
-/** Valores del editor: horas "HH:mm" y duraciones "h:mm" como texto, tal como se escriben. */
+/**
+ * Valores del editor: horas "HH:mm" como texto, tal como se escriben. En MIXTO se usan los tramos
+ * (office*, home*) y no startTime/endTime.
+ */
 export interface WorkdayFormValues {
   startTime: string
   endTime: string
   breaks: BreakFormValues[]
   location: WorkLocation
-  remoteMinutes: string
+  officeStart: string
+  officeEnd: string
+  homeStart: string
+  homeEnd: string
   notes: string
 }
 
@@ -29,7 +35,10 @@ export const WORKDAY_FIELDS = [
   'endTime',
   'breaks',
   'location',
-  'remoteMinutes',
+  'officeStart',
+  'officeEnd',
+  'homeStart',
+  'homeEnd',
   'notes',
 ] as const
 
@@ -40,7 +49,10 @@ export function toFormValues(workday: WorkdayDto | null): WorkdayFormValues {
       endTime: '',
       breaks: [],
       location: 'OFICINA',
-      remoteMinutes: '',
+      officeStart: '',
+      officeEnd: '',
+      homeStart: '',
+      homeEnd: '',
       notes: '',
     }
   }
@@ -49,7 +61,10 @@ export function toFormValues(workday: WorkdayDto | null): WorkdayFormValues {
     endTime: workday.endTime,
     breaks: workday.breaks.map((b) => ({ type: b.type, startTime: b.startTime, endTime: b.endTime })),
     location: workday.location,
-    remoteMinutes: durationInputValue(workday.remoteMinutes),
+    officeStart: workday.officeStart ?? '',
+    officeEnd: workday.officeEnd ?? '',
+    homeStart: workday.homeStart ?? '',
+    homeEnd: workday.homeEnd ?? '',
     notes: workday.notes ?? '',
   }
 }
@@ -61,23 +76,38 @@ export function toCalcInput(values: WorkdayFormValues): CalcWorkday {
     endTime: values.endTime || null,
     breaks: values.breaks.map((b) => ({ type: b.type, startTime: b.startTime || null, endTime: b.endTime || null })),
     location: values.location,
-    remoteMinutes: values.location === 'MIXTO' ? parseDuration(values.remoteMinutes) : null,
+    mixed:
+      values.location === 'MIXTO'
+        ? {
+            officeStart: values.officeStart || null,
+            officeEnd: values.officeEnd || null,
+            homeStart: values.homeStart || null,
+            homeEnd: values.homeEnd || null,
+          }
+        : null,
   }
 }
 
-/** Cuerpo de PUT /api/workdays/{date}. remoteMinutes solo se envía con MIXTO. */
+const timeOrNull = (value: string) => (value ? normalizeTime(value) : null)
+
+/** Cuerpo de PUT /api/workdays/{date}. En MIXTO se envían los tramos y la entrada/salida que salen de ellos. */
 export function toRequest(values: WorkdayFormValues, version: number | null): WorkdayRequest {
   const notes = values.notes.trim()
+  const mixed = values.location === 'MIXTO'
+  const bounds = mixed ? mixedBounds(toCalcInput(values).mixed) : null
   return {
-    startTime: values.startTime ? normalizeTime(values.startTime) : null,
-    endTime: values.endTime ? normalizeTime(values.endTime) : null,
+    startTime: mixed ? (bounds ? normalizeTime(bounds.startTime) : null) : timeOrNull(values.startTime),
+    endTime: mixed ? (bounds ? normalizeTime(bounds.endTime) : null) : timeOrNull(values.endTime),
     breaks: values.breaks.map((b) => ({
       type: b.type,
       startTime: normalizeTime(b.startTime),
       endTime: normalizeTime(b.endTime),
     })),
     location: values.location,
-    remoteMinutes: values.location === 'MIXTO' ? parseDuration(values.remoteMinutes) : null,
+    officeStart: mixed ? timeOrNull(values.officeStart) : null,
+    officeEnd: mixed ? timeOrNull(values.officeEnd) : null,
+    homeStart: mixed ? timeOrNull(values.homeStart) : null,
+    homeEnd: mixed ? timeOrNull(values.homeEnd) : null,
     notes: notes === '' ? null : notes,
     version,
   }
@@ -87,16 +117,8 @@ function isTimeOrEmpty(value: string): boolean {
   return value === '' || TIME_PATTERN.test(value)
 }
 
-function isDurationOrEmpty(value: string): boolean {
-  if (value.trim() === '') {
-    return true
-  }
-  const minutes = parseDuration(value)
-  return minutes !== null && minutes >= 0
-}
-
 const TIME_MESSAGE = 'Hora no válida (HH:mm)'
-const DURATION_MESSAGE = 'Duración no válida (h:mm)'
+const MIXED_FIELDS = ['officeStart', 'officeEnd', 'homeStart', 'homeEnd'] as const
 
 /** Path de Zod a partir del campo de un error del cálculo ("breaks[1]" → ["breaks", 1]). */
 function issuePath(field: string | null): (string | number)[] {
@@ -125,7 +147,10 @@ export function workdaySchema(rules: CalcRules) {
         }),
       ),
       location: z.enum(['OFICINA', 'CASA', 'MIXTO']),
-      remoteMinutes: z.string(),
+      officeStart: z.string(),
+      officeEnd: z.string(),
+      homeStart: z.string(),
+      homeEnd: z.string(),
       notes: z.string().max(NOTES_MAX, `Máximo ${NOTES_MAX} caracteres`),
     })
     .superRefine((values, ctx) => {
@@ -133,13 +158,12 @@ export function workdaySchema(rules: CalcRules) {
       const add = (path: (string | number)[], message: string) => {
         ctx.addIssue({ code: 'custom', path, message })
       }
-      if (!isTimeOrEmpty(values.startTime)) {
-        add(['startTime'], TIME_MESSAGE)
-        formatErrors = true
-      }
-      if (!isTimeOrEmpty(values.endTime)) {
-        add(['endTime'], TIME_MESSAGE)
-        formatErrors = true
+      const timeFields = values.location === 'MIXTO' ? MIXED_FIELDS : (['startTime', 'endTime'] as const)
+      for (const field of timeFields) {
+        if (!isTimeOrEmpty(values[field])) {
+          add([field], TIME_MESSAGE)
+          formatErrors = true
+        }
       }
       values.breaks.forEach((b, i) => {
         if (!isTimeOrEmpty(b.startTime)) {
@@ -151,10 +175,6 @@ export function workdaySchema(rules: CalcRules) {
           formatErrors = true
         }
       })
-      if (values.location === 'MIXTO' && !isDurationOrEmpty(values.remoteMinutes)) {
-        add(['remoteMinutes'], DURATION_MESSAGE)
-        formatErrors = true
-      }
       if (formatErrors) {
         return
       }

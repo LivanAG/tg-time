@@ -7,7 +7,6 @@ import type { MonthRowDto, PeriodDto, PeriodSummaryDto } from '../api/types'
 import { Duration } from '../components/Duration'
 import { IssueList } from '../components/IssueList'
 import { NoPeriod } from '../components/NoPeriod'
-import { PeriodPicker } from '../components/PeriodPicker'
 import { Card, QueryError, Spinner, Stat } from '../components/ui'
 import { useSelectedPeriod } from '../hooks/usePeriods'
 import { capitalize, formatDate, formatMonthShort } from '../lib/dates'
@@ -16,7 +15,7 @@ import { formatMinutes } from '../lib/time'
 
 /** /resumen — equivalente a la hoja Horas del Excel. */
 export function SummaryPage() {
-  const { periodsQuery, periods, period, selectPeriod } = useSelectedPeriod()
+  const { periodsQuery, period } = useSelectedPeriod()
 
   return (
     <div className="space-y-4">
@@ -25,9 +24,6 @@ export function SummaryPage() {
           <h1 className="text-2xl font-semibold text-slate-900">Resumen anual</h1>
           <p className="text-sm text-slate-600">Horas del periodo frente al convenio (hoja Horas del Excel).</p>
         </div>
-        {periods && periods.length > 1 && period && (
-          <PeriodPicker periods={periods} value={period.id} onChange={selectPeriod} />
-        )}
       </header>
       {periodsQuery.isPending ? (
         <Spinner />

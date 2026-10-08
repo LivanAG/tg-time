@@ -1,9 +1,29 @@
-import type { BreakDto, DayDto, MonthSummaryDto, WeekSummaryDto } from '../../api/types'
+import type { BreakDto, DayDto, MonthSummaryDto, TimeOfDay, WeekSummaryDto, WorkLocation } from '../../api/types'
 import { absenceLabel, BREAK_SHORT } from '../../lib/format'
 
 /** "D 12:43–13:02 · C 15:02–15:32" */
 export function breaksSummary(breaks: BreakDto[]): string {
   return breaks.map((b) => `${BREAK_SHORT[b.type]} ${b.startTime}–${b.endTime}`).join(' · ')
+}
+
+interface DayTimes {
+  startTime: TimeOfDay | null
+  endTime: TimeOfDay | null
+  location: WorkLocation | null
+  officeStart: TimeOfDay | null
+  officeEnd: TimeOfDay | null
+  homeStart: TimeOfDay | null
+  homeEnd: TimeOfDay | null
+}
+
+/** "07:25 – 17:59" o, en un día mixto, "🏢 07:30–14:00 · 🏠 15:00–18:00" (en orden de hora). */
+export function timesSummary(day: DayTimes): string {
+  if (day.location === 'MIXTO' && day.officeStart && day.officeEnd && day.homeStart && day.homeEnd) {
+    const office = `🏢 ${day.officeStart}–${day.officeEnd}`
+    const home = `🏠 ${day.homeStart}–${day.homeEnd}`
+    return day.homeStart < day.officeStart ? `${home} · ${office}` : `${office} · ${home}`
+  }
+  return `${day.startTime ?? '—'} – ${day.endTime ?? '—'}`
 }
 
 /** Etiqueta de un día sin jornada normal: fin de semana, festivo, ausencia o fuera del periodo. */

@@ -34,6 +34,8 @@ type AbsenceValues = z.infer<typeof absenceSchema>
 
 interface AbsenceDialogProps {
   date: IsoDate
+  /** Periodo al que pertenece la ausencia (cada periodo tiene las suyas). */
+  periodId: string
   absence: AbsenceDto | null
   dayMinutes: number
   onClose: () => void
@@ -42,7 +44,7 @@ interface AbsenceDialogProps {
 }
 
 /** Marcar o quitar una ausencia (vacaciones, puente, permiso o baja; día completo o medio día). */
-export function AbsenceDialog({ date, absence, dayMinutes, onClose, onOpenWorkday }: AbsenceDialogProps) {
+export function AbsenceDialog({ date, periodId, absence, dayMinutes, onClose, onOpenWorkday }: AbsenceDialogProps) {
   const queryClient = useQueryClient()
   const [formErrors, setFormErrors] = useState<string[]>([])
   const {
@@ -61,7 +63,7 @@ export function AbsenceDialog({ date, absence, dayMinutes, onClose, onOpenWorkda
 
   const save = useMutation({
     mutationFn: (values: AbsenceValues) =>
-      absencesApi.save(date, {
+      absencesApi.save(date, periodId, {
         type: values.type,
         halfDay: values.halfDay,
         note: values.note.trim() === '' ? null : values.note.trim(),
@@ -74,7 +76,7 @@ export function AbsenceDialog({ date, absence, dayMinutes, onClose, onOpenWorkda
   })
 
   const remove = useMutation({
-    mutationFn: () => absencesApi.remove(date),
+    mutationFn: () => absencesApi.remove(date, periodId),
     onSuccess: () => {
       void invalidateDayData(queryClient)
       onClose()

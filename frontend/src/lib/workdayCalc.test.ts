@@ -11,8 +11,8 @@ import {
   END_BEFORE_START,
   liveCalculation,
   LUNCH_BELOW_MINIMUM,
-  REMOTE_MINUTES_EXCEED_WORKED,
-  REMOTE_MINUTES_REQUIRED,
+  mixedBounds,
+  SEGMENTS_OVERLAP,
   validateWorkday,
   type CalcBreak,
   type CalcWorkday,
@@ -26,7 +26,17 @@ function br(type: BreakType, startTime: string, endTime: string): CalcBreak {
 }
 
 function day(startTime: string | null, endTime: string | null, ...breaks: CalcBreak[]): CalcWorkday {
-  return { startTime, endTime, breaks, location: 'OFICINA', remoteMinutes: null }
+  return { startTime, endTime, breaks, location: 'OFICINA', mixed: null }
+}
+
+function mixed(officeStart: string, officeEnd: string, homeStart: string, homeEnd: string, ...breaks: CalcBreak[]) {
+  return {
+    startTime: null,
+    endTime: null,
+    breaks,
+    location: 'MIXTO',
+    mixed: { officeStart, officeEnd, homeStart, homeEnd },
+  } satisfies CalcWorkday
 }
 
 function codes(input: CalcWorkday): string[] {
@@ -90,11 +100,31 @@ describe('calculateWorkday', () => {
   })
 
   it('reparte oficina y casa según la ubicación', () => {
-    const at = (location: WorkLocation, remoteMinutes: number | null) =>
-      calculateWorkday({ startTime: '08:00', endTime: '16:00', breaks: [], location, remoteMinutes }, rules)
-    expect(at('OFICINA', null)).toMatchObject({ officeMinutes: 480, remoteMinutes: 0 })
-    expect(at('CASA', null)).toMatchObject({ officeMinutes: 0, remoteMinutes: 480 })
-    expect(at('MIXTO', 180)).toMatchObject({ officeMinutes: 300, remoteMinutes: 180 })
+    const at = (location: WorkLocation) =>
+      calculateWorkday({ startTime: '08:00', endTime: '16:00', breaks: [], location, mixed: null }, rules)
+    expect(at('OFICINA')).toMatchObject({ officeMinutes: 480, remoteMinutes: 0 })
+    expect(at('CASA')).toMatchObject({ officeMinutes: 0, remoteMinutes: 480 })
+    expect(calculateWorkday(mixed('08:00', '13:00', '13:00', '16:00'), rules)).toMatchObject({
+      officeMinutes: 300,
+      remoteMinutes: 180,
+    })
+  })
+
+  it('en un día mixto suma los dos tramos, no el hueco, y cada pausa descuenta de su tramo', () => {
+    // Igual que WorkdayCalculatorTest.mixedDayCountsBothSegmentsButNotTheGapBetweenThem.
+    const day = mixed('07:30', '14:00', '15:00', '18:00', br('DESAYUNO', '10:00', '10:30'), br('COMIDA', '16:00', '16:20'))
+    expect(validateWorkday(day, rules)).toEqual([])
+    expect(calculateWorkday(day, rules)).toMatchObject({
+      grossMinutes: 570,
+      workedMinutes: 530,
+      remoteMinutes: 150,
+      officeMinutes: 380,
+    })
+    expect(mixedBounds(day.mixed)).toEqual({ startTime: '07:30', endTime: '18:00' })
+
+    const homeFirst = mixed('10:00', '15:00', '07:00', '09:00')
+    expect(mixedBounds(homeFirst.mixed)).toEqual({ startTime: '07:00', endTime: '15:00' })
+    expect(calculateWorkday(homeFirst, rules)).toMatchObject({ grossMinutes: 420, officeMinutes: 300, remoteMinutes: 120 })
   })
 })
 
@@ -112,9 +142,14 @@ describe('validateWorkday', () => {
       DUPLICATE_LUNCH,
     ])
     expect(codes(day('08:00', '16:00', br('OTRA', '10:00', '10:00')))).toEqual([BREAK_INVALID])
-    expect(codes({ ...day('08:00', '16:00'), location: 'MIXTO' })).toEqual([REMOTE_MINUTES_REQUIRED])
-    expect(codes({ ...day('08:00', '16:00'), location: 'MIXTO', remoteMinutes: 500 })).toEqual([
-      REMOTE_MINUTES_EXCEED_WORKED,
+    expect(validateWorkday({ ...day('08:00', '16:00'), location: 'MIXTO' }, rules).map((e) => e.field)).toEqual([
+      'officeStart',
+      'homeStart',
+    ])
+    expect(validateWorkday(mixed('08:00', '13:00', '16:00', '15:00'), rules).map((e) => e.field)).toEqual(['homeEnd'])
+    expect(codes(mixed('08:00', '13:00', '12:00', '16:00'))).toEqual([SEGMENTS_OVERLAP])
+    expect(codes(mixed('08:00', '13:00', '14:00', '17:00', br('OTRA', '13:15', '13:30')))).toEqual([
+      BREAK_OUTSIDE_WORKDAY,
     ])
     expect(codes(day('07:25', '17:59', br('DESAYUNO', '12:43', '13:02')))).toEqual([])
   })
@@ -130,7 +165,7 @@ describe('validateWorkday', () => {
       validateWorkday(day('08:00', '16:00', br('OTRA', '10:00', '10:30'), br('COMIDA', '10:15', '11:00')), rules),
     ).toEqual([{ code: BREAKS_OVERLAP, field: 'breaks[1]', message: 'Las pausas no pueden solaparse' }])
     expect(validateWorkday({ ...day('08:00', '16:00'), location: 'MIXTO' }, rules)[0].message).toBe(
-      'Indica cuántos minutos has trabajado en casa',
+      'Indica la entrada y la salida en la oficina',
     )
   })
 
@@ -152,10 +187,9 @@ describe('validateWorkday', () => {
 })
 
 describe('liveCalculation', () => {
-  it('calcula aunque falten los minutos en casa de MIXTO', () => {
-    const live = liveCalculation({ ...day('08:00', '16:00'), location: 'MIXTO' }, rules)
-    expect(live.errors.map((e) => e.code)).toEqual([REMOTE_MINUTES_REQUIRED])
-    expect(live.result?.workedMinutes).toBe(480)
+  it('en MIXTO calcula en cuanto los dos tramos están completos', () => {
+    expect(liveCalculation({ ...mixed('08:00', '13:00', '', ''), mixed: null }, rules).result).toBeNull()
+    expect(liveCalculation(mixed('08:00', '13:00', '14:00', '17:00'), rules).result?.workedMinutes).toBe(480)
   })
 
   it('no calcula si faltan horas o la salida es anterior', () => {

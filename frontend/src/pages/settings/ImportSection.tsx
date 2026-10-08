@@ -17,11 +17,11 @@ import {
   Spinner,
   type BadgeTone,
 } from '../../components/ui'
-import { usePeriods } from '../../hooks/usePeriods'
+import { useSelectedPeriod } from '../../hooks/usePeriods'
 import { formatDate } from '../../lib/dates'
 import { ABSENCE_LABELS, IMPORT_STATUS_LABELS } from '../../lib/format'
 import { formatMinutes, formatOptionalMinutes } from '../../lib/time'
-import { breaksSummary } from '../record/dayInfo'
+import { breaksSummary, timesSummary } from '../record/dayInfo'
 
 const MAX_BYTES = 2 * 1024 * 1024
 
@@ -60,7 +60,7 @@ function checkFile(file: File): string | null {
  */
 export function ImportSection() {
   const queryClient = useQueryClient()
-  const periodsQuery = usePeriods()
+  const { periodsQuery, period: selected } = useSelectedPeriod()
   const inputId = useId()
   const inputRef = useRef<HTMLInputElement>(null)
   const [file, setFile] = useState<File | null>(null)
@@ -69,11 +69,13 @@ export function ImportSection() {
   const [analyzing, setAnalyzing] = useState(false)
   const [done, setDone] = useState<ImportResultDto | null>(null)
 
+  // Por defecto se importa en el periodo en uso (cada periodo tiene sus propios fichajes).
+  const effective: Options = { ...options, periodId: options.periodId ?? selected?.id ?? null }
   const fileKey = file ? `${file.name}:${file.size}:${file.lastModified}` : null
   // Cambiar una opción vuelve a pedir la vista previa (nueva clave), manteniendo la anterior mientras tanto.
   const preview = useQuery({
-    queryKey: ['import-preview', fileKey, options],
-    queryFn: () => importExportApi.importXlsx(file as File, { ...options, dryRun: true }),
+    queryKey: ['import-preview', fileKey, effective],
+    queryFn: () => importExportApi.importXlsx(file as File, { ...effective, dryRun: true }),
     enabled: analyzing && file !== null,
     staleTime: Infinity,
     gcTime: 0,
@@ -82,7 +84,7 @@ export function ImportSection() {
   })
 
   const confirm = useMutation({
-    mutationFn: () => importExportApi.importXlsx(file as File, { ...options, dryRun: false }),
+    mutationFn: () => importExportApi.importXlsx(file as File, { ...effective, dryRun: false }),
     onSuccess: (result) => {
       setDone(result)
       setAnalyzing(false)
@@ -154,11 +156,11 @@ export function ImportSection() {
           </div>
           <SelectField
             label="Periodo de destino"
-            value={options.periodId ?? ''}
+            value={effective.periodId ?? ''}
             onChange={(e) => setOption('periodId', e.target.value === '' ? null : e.target.value)}
-            hint="Por defecto, el periodo que contiene más fechas del fichero."
+            hint="Los días se guardan en este periodo. Por defecto, el que estás usando."
           >
-            <option value="">Automático</option>
+            {periods.length === 0 && <option value="">Sin periodos</option>}
             {periods.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.name}
@@ -385,9 +387,7 @@ function ImportPreview({ result, periods, refreshing, confirming, confirmError, 
                     <td className="px-3 py-1.5 text-slate-700">
                       {day.workday?.startTime && day.workday.endTime ? (
                         <>
-                          <span className="tabular-nums">
-                            {day.workday.startTime}–{day.workday.endTime}
-                          </span>
+                          <span className="tabular-nums">{timesSummary(day.workday)}</span>
                           {day.workday.breaks.length > 0 && (
                             <span className="block text-xs text-slate-500">{breaksSummary(day.workday.breaks)}</span>
                           )}

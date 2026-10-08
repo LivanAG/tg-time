@@ -7,7 +7,7 @@ import com.controlhorario.common.calc.CalcIssue;
 /**
  * Totales calculados de un día. trabajado = bruto - desayunoDescontado - comidaDescontada - otras.
  *
- * @param grossMinutes             salida - entrada
+ * @param grossMinutes             suma de los tramos: salida - entrada o, en MIXTO, oficina + casa
  * @param breakfastMinutes         duración real del desayuno
  * @param breakfastDeductedMinutes max(0, desayuno - tolerancia) (columna K del Excel)
  * @param lunchMinutes             duración real de la comida

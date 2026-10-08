@@ -2,6 +2,7 @@ package com.controlhorario.absence;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.UUID;
 
 import jakarta.validation.Valid;
 
@@ -34,24 +35,26 @@ public class AbsenceController {
 
     @GetMapping
     public List<AbsenceDto> list(@RequestParam @DateTimeFormat(iso = ISO.DATE) LocalDate from,
-            @RequestParam @DateTimeFormat(iso = ISO.DATE) LocalDate to) {
-        return service.list(currentUser.id(), from, to);
+            @RequestParam @DateTimeFormat(iso = ISO.DATE) LocalDate to, @RequestParam(required = false) UUID periodId) {
+        return service.list(currentUser.id(), periodId, from, to);
     }
 
     @GetMapping("/{date}")
-    public AbsenceDto get(@PathVariable @DateTimeFormat(iso = ISO.DATE) LocalDate date) {
-        return service.get(currentUser.id(), date);
+    public AbsenceDto get(@PathVariable @DateTimeFormat(iso = ISO.DATE) LocalDate date,
+            @RequestParam(required = false) UUID periodId) {
+        return service.get(currentUser.id(), periodId, date);
     }
 
     @PutMapping("/{date}")
     public AbsenceDto put(@PathVariable @DateTimeFormat(iso = ISO.DATE) LocalDate date,
-            @Valid @RequestBody AbsenceRequest request) {
-        return service.put(currentUser.id(), date, request);
+            @RequestParam(required = false) UUID periodId, @Valid @RequestBody AbsenceRequest request) {
+        return service.put(currentUser.id(), periodId, date, request);
     }
 
     @DeleteMapping("/{date}")
-    public ResponseEntity<Void> delete(@PathVariable @DateTimeFormat(iso = ISO.DATE) LocalDate date) {
-        service.delete(currentUser.id(), date);
+    public ResponseEntity<Void> delete(@PathVariable @DateTimeFormat(iso = ISO.DATE) LocalDate date,
+            @RequestParam(required = false) UUID periodId) {
+        service.delete(currentUser.id(), periodId, date);
         return ResponseEntity.noContent().build();
     }
 }

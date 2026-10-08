@@ -1,22 +1,22 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { forwardRef, useEffect, useMemo, useRef, useState, type InputHTMLAttributes } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useFieldArray, useForm, useWatch, type Control } from 'react-hook-form'
 import { Link } from 'react-router'
 
 import { isApiError } from '../../api/client'
 import { absencesApi, workdaysApi } from '../../api/endpoints'
 import { invalidateDayData, queryKeys } from '../../api/queryKeys'
-import type { AbsenceDto, BreakType, IsoDate, WorkdayDto } from '../../api/types'
+import type { AbsenceDto, BreakType, IsoDate, WorkdayDto, WorkLocation } from '../../api/types'
 import { Duration } from '../../components/Duration'
 import { Modal } from '../../components/Modal'
 import { Alert, Button, FormErrors, QueryError, Spinner, TextAreaField, TextField } from '../../components/ui'
-import { findPeriodForDate, usePeriods } from '../../hooks/usePeriods'
+import { useSelectedPeriod } from '../../hooks/usePeriods'
 import { capitalize, formatDateLong } from '../../lib/dates'
 import { absenceLabel, BREAK_LABELS, LOCATION_LABELS } from '../../lib/format'
 import { applyServerErrors } from '../../lib/formErrors'
-import { currentTime, formatMinutes } from '../../lib/time'
-import { liveCalculation, type CalcRules } from '../../lib/workdayCalc'
+import { formatMinutes } from '../../lib/time'
+import { liveCalculation, mixedBounds, type CalcRules } from '../../lib/workdayCalc'
 import {
   NOTES_MAX,
   toCalcInput,
@@ -38,26 +38,38 @@ interface WorkdayEditorProps {
   onClose: () => void
 }
 
-/** Editor completo de un día (modal): horas, pausas, ubicación y notas con total en vivo. */
+/**
+ * Editor completo de un día (modal): horas, pausas, ubicación y notas con total en vivo. Trabaja sobre
+ * el periodo seleccionado (cada periodo tiene sus propios fichajes).
+ */
 export function WorkdayEditor({ date, onClose }: WorkdayEditorProps) {
   const queryClient = useQueryClient()
-  const periodsQuery = usePeriods()
-  const workdayQuery = useQuery({ queryKey: queryKeys.workday(date), queryFn: () => workdaysApi.get(date) })
-  const absenceQuery = useQuery({ queryKey: queryKeys.absence(date), queryFn: () => absencesApi.get(date) })
+  const { periodsQuery, period } = useSelectedPeriod()
+  // Solo se lee y se ficha si el día está dentro del periodo seleccionado.
+  const periodId = period && period.startDate <= date && date <= period.endDate ? period.id : null
+  const workdayQuery = useQuery({
+    queryKey: queryKeys.workday(date, periodId ?? ''),
+    queryFn: () => workdaysApi.get(date, periodId as string),
+    enabled: periodId !== null,
+  })
+  const absenceQuery = useQuery({
+    queryKey: queryKeys.absence(date, periodId ?? ''),
+    queryFn: () => absencesApi.get(date, periodId as string),
+    enabled: periodId !== null,
+  })
   const [notice, setNotice] = useState<string | null>(null)
 
-  const period = findPeriodForDate(periodsQuery.data, date)
   const breakfastToleranceMin = period?.breakfastToleranceMin ?? DEFAULT_RULES.breakfastToleranceMin
   const minLunchMin = period?.minLunchMin ?? DEFAULT_RULES.minLunchMin
   const rules = useMemo<CalcRules>(() => ({ breakfastToleranceMin, minLunchMin }), [breakfastToleranceMin, minLunchMin])
 
   const handleConflict = () => {
     setNotice(CONFLICT_MESSAGE)
-    void queryClient.invalidateQueries({ queryKey: queryKeys.workday(date) })
+    void queryClient.invalidateQueries({ queryKey: queryKeys.workday(date, periodId ?? '') })
     void invalidateDayData(queryClient)
   }
 
-  const loading = periodsQuery.isPending || workdayQuery.isPending || absenceQuery.isPending
+  const loading = periodsQuery.isPending || (periodId !== null && (workdayQuery.isPending || absenceQuery.isPending))
   const error = periodsQuery.error ?? workdayQuery.error
 
   return (
@@ -78,7 +90,8 @@ export function WorkdayEditor({ date, onClose }: WorkdayEditorProps) {
           workday={workdayQuery.data ?? null}
           absence={absenceQuery.data ?? null}
           rules={rules}
-          hasPeriod={period !== undefined}
+          periodId={periodId}
+          periodName={period?.name ?? null}
           notice={notice}
           onConflict={handleConflict}
           onClose={onClose}
@@ -93,13 +106,25 @@ interface WorkdayFormProps {
   workday: WorkdayDto | null
   absence: AbsenceDto | null
   rules: CalcRules
-  hasPeriod: boolean
+  /** Periodo en el que se guarda; null si el día no está en el periodo seleccionado (o no hay ninguno). */
+  periodId: string | null
+  periodName: string | null
   notice: string | null
   onConflict: () => void
   onClose: () => void
 }
 
-function WorkdayForm({ date, workday, absence, rules, hasPeriod, notice, onConflict, onClose }: WorkdayFormProps) {
+function WorkdayForm({
+  date,
+  workday,
+  absence,
+  rules,
+  periodId,
+  periodName,
+  notice,
+  onConflict,
+  onClose,
+}: WorkdayFormProps) {
   const queryClient = useQueryClient()
   const schema = useMemo(() => workdaySchema(rules), [rules])
   const [formErrors, setFormErrors] = useState<string[]>([])
@@ -111,6 +136,7 @@ function WorkdayForm({ date, workday, absence, rules, hasPeriod, notice, onConfl
     control,
     handleSubmit,
     setValue,
+    getValues,
     setError,
     formState: { errors },
   } = useForm<WorkdayFormValues>({ resolver: zodResolver(schema), defaultValues: toFormValues(workday) })
@@ -126,9 +152,10 @@ function WorkdayForm({ date, workday, absence, rules, hasPeriod, notice, onConfl
   }, [confirmingDelete])
 
   const save = useMutation({
-    mutationFn: (values: WorkdayFormValues) => workdaysApi.save(date, toRequest(values, workday?.version ?? null)),
+    mutationFn: (values: WorkdayFormValues) =>
+      workdaysApi.save(date, periodId as string, toRequest(values, workday?.version ?? null)),
     onSuccess: (saved) => {
-      queryClient.setQueryData(queryKeys.workday(date), saved)
+      queryClient.setQueryData(queryKeys.workday(date, periodId as string), saved)
       void invalidateDayData(queryClient)
       onClose()
     },
@@ -142,15 +169,15 @@ function WorkdayForm({ date, workday, absence, rules, hasPeriod, notice, onConfl
   })
 
   const removeDay = useMutation({
-    mutationFn: () => workdaysApi.remove(date),
+    mutationFn: () => workdaysApi.remove(date, periodId as string),
     onSuccess: () => {
-      queryClient.setQueryData(queryKeys.workday(date), null)
+      queryClient.setQueryData(queryKeys.workday(date, periodId as string), null)
       void invalidateDayData(queryClient)
       onClose()
     },
     onError: (error) => {
       if (isApiError(error) && error.status === 404) {
-        queryClient.setQueryData(queryKeys.workday(date), null)
+        queryClient.setQueryData(queryKeys.workday(date, periodId as string), null)
         void invalidateDayData(queryClient)
         onClose()
         return
@@ -164,6 +191,25 @@ function WorkdayForm({ date, workday, absence, rules, hasPeriod, notice, onConfl
     setFormErrors([])
     save.mutate(values)
   })
+
+  // Al pasar a MIXTO, la entrada del día se propone como entrada en la oficina y la salida como salida de
+  // casa ("teletrabajo tardes"); al salir de MIXTO, si no hay entrada/salida, se toman de los tramos.
+  const adaptTimesTo = (next: WorkLocation) => {
+    const values = getValues()
+    const options = { shouldDirty: true, shouldValidate: false }
+    if (next === 'MIXTO') {
+      if (!values.officeStart && !values.homeStart && !values.officeEnd && !values.homeEnd) {
+        setValue('officeStart', values.startTime, options)
+        setValue('homeEnd', values.endTime, options)
+      }
+      return
+    }
+    const bounds = mixedBounds(toCalcInput({ ...values, location: 'MIXTO' }).mixed)
+    if (bounds && !values.startTime && !values.endTime) {
+      setValue('startTime', bounds.startTime, options)
+      setValue('endTime', bounds.endTime, options)
+    }
+  }
 
   const hasBreakfast = (breaks ?? []).some((b) => b.type === 'DESAYUNO')
   const hasLunch = (breaks ?? []).some((b) => b.type === 'COMIDA')
@@ -180,31 +226,81 @@ function WorkdayForm({ date, workday, absence, rules, hasPeriod, notice, onConfl
           {absence.note ? ` (${absence.note})` : ''}.
         </Alert>
       )}
-      {!hasPeriod && (
-        <Alert tone="warning" title="Fecha fuera de cualquier periodo">
-          Para fichar este día, crea antes el periodo que lo incluya en{' '}
-          <Link to="/ajustes?seccion=periodos" className="font-medium underline" onClick={onClose}>
-            Ajustes
-          </Link>
-          .
-        </Alert>
-      )}
+      {periodId === null &&
+        (periodName ? (
+          <Alert tone="warning" title={`Este día no está en el periodo ${periodName}`}>
+            Cada periodo tiene sus propios fichajes. Para fichar este día, elige en el selector de periodo uno que
+            lo incluya, o créalo en{' '}
+            <Link to="/ajustes?seccion=periodos" className="font-medium underline" onClick={onClose}>
+              Ajustes
+            </Link>
+            .
+          </Alert>
+        ) : (
+          <Alert tone="warning" title="Aún no tienes ningún periodo">
+            Para fichar, crea antes un periodo en{' '}
+            <Link to="/ajustes?seccion=periodos" className="font-medium underline" onClick={onClose}>
+              Ajustes
+            </Link>
+            .
+          </Alert>
+        ))}
       <FormErrors messages={formErrors} />
 
-      <div className="grid grid-cols-2 gap-3">
-        <TimeWithNow
-          label="Entrada"
-          error={errors.startTime?.message}
-          onNow={() => setValue('startTime', currentTime(), { shouldDirty: true, shouldValidate: false })}
-          {...register('startTime')}
-        />
-        <TimeWithNow
-          label="Salida"
-          error={errors.endTime?.message}
-          onNow={() => setValue('endTime', currentTime(), { shouldDirty: true, shouldValidate: false })}
-          {...register('endTime')}
-        />
-      </div>
+      <fieldset className="space-y-2">
+        <legend className="text-sm font-semibold text-slate-800">Ubicación</legend>
+        <div className="grid grid-cols-3 gap-2">
+          {(['OFICINA', 'CASA', 'MIXTO'] as const).map((value) => (
+            <label
+              key={value}
+              className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm has-[:checked]:border-sky-700 has-[:checked]:bg-sky-50 has-[:checked]:font-semibold has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-sky-700"
+            >
+              <input
+                type="radio"
+                value={value}
+                className="sr-only"
+                {...register('location', { onChange: (e) => adaptTimesTo(e.target.value as WorkLocation) })}
+              />
+              {LOCATION_LABELS[value]}
+            </label>
+          ))}
+        </div>
+      </fieldset>
+
+      {location === 'MIXTO' ? (
+        <div className="space-y-3">
+          {MIXED_SEGMENTS.map((segment) => (
+            <fieldset key={segment.title} className="rounded-lg border border-slate-200 p-3">
+              <legend className="px-1 text-sm font-semibold text-slate-800">
+                <span aria-hidden="true">{segment.icon}</span> {segment.title}
+              </legend>
+              <div className="grid grid-cols-2 gap-3">
+                <TextField
+                  type="time"
+                  label={segment.startLabel}
+                  error={errors[segment.start]?.message}
+                  {...register(segment.start)}
+                />
+                <TextField
+                  type="time"
+                  label={segment.endLabel}
+                  error={errors[segment.end]?.message}
+                  {...register(segment.end)}
+                />
+              </div>
+            </fieldset>
+          ))}
+          <p className="text-xs text-slate-500">
+            Los tramos pueden ir en cualquier orden. El hueco entre los dos (desplazamiento, comida...) no cuenta
+            como trabajado; las pausas van dentro de un tramo.
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-3">
+          <TextField type="time" label="Entrada" error={errors.startTime?.message} {...register('startTime')} />
+          <TextField type="time" label="Salida" error={errors.endTime?.message} {...register('endTime')} />
+        </div>
+      )}
 
       <fieldset className="space-y-3">
         <legend className="text-sm font-semibold text-slate-800">Pausas</legend>
@@ -278,35 +374,6 @@ function WorkdayForm({ date, workday, absence, rules, hasPeriod, notice, onConfl
         </div>
       </fieldset>
 
-      <fieldset className="space-y-2">
-        <legend className="text-sm font-semibold text-slate-800">Ubicación</legend>
-        <div className="grid grid-cols-3 gap-2">
-          {(['OFICINA', 'CASA', 'MIXTO'] as const).map((value) => (
-            <label
-              key={value}
-              className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm has-[:checked]:border-sky-700 has-[:checked]:bg-sky-50 has-[:checked]:font-semibold has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-sky-700"
-            >
-              <input type="radio" value={value} className="sr-only" {...register('location')} />
-              {LOCATION_LABELS[value]}
-            </label>
-          ))}
-        </div>
-        {location === 'MIXTO' && (
-          <TextField
-            label="Tiempo en casa (h:mm)"
-            placeholder="4:00"
-            inputMode="text"
-            autoComplete="off"
-            hint="El resto del día cuenta como oficina."
-            error={errors.remoteMinutes?.message}
-            {...register('remoteMinutes')}
-          />
-        )}
-        {location !== 'MIXTO' && errors.remoteMinutes?.message && (
-          <p className="text-sm text-red-700">{errors.remoteMinutes.message}</p>
-        )}
-      </fieldset>
-
       <TextAreaField
         label="Notas"
         rows={3}
@@ -350,7 +417,7 @@ function WorkdayForm({ date, workday, absence, rules, hasPeriod, notice, onConfl
           <Button variant="secondary" onClick={onClose} disabled={busy}>
             Cancelar
           </Button>
-          <Button type="submit" busy={save.isPending} disabled={!hasPeriod || removeDay.isPending}>
+          <Button type="submit" busy={save.isPending} disabled={periodId === null || removeDay.isPending}>
             Guardar
           </Button>
         </div>
@@ -359,26 +426,25 @@ function WorkdayForm({ date, workday, absence, rules, hasPeriod, notice, onConfl
   )
 }
 
-interface TimeWithNowProps extends InputHTMLAttributes<HTMLInputElement> {
-  label: string
-  error?: string
-  onNow: () => void
-}
-
-/** Campo de hora con botón "Ahora" (fichar desde el móvil en un toque). */
-const TimeWithNow = forwardRef<HTMLInputElement, TimeWithNowProps>(function TimeWithNow(
-  { label, error, onNow, ...rest },
-  ref,
-) {
-  return (
-    <div className="space-y-1">
-      <TextField ref={ref} type="time" label={label} error={error} {...rest} />
-      <Button variant="ghost" size="sm" onClick={onNow} aria-label={`${label}: poner la hora actual`}>
-        Ahora
-      </Button>
-    </div>
-  )
-})
+/** Los dos tramos de un día mixto en el editor. */
+const MIXED_SEGMENTS = [
+  {
+    icon: '🏢',
+    title: 'Oficina',
+    start: 'officeStart',
+    end: 'officeEnd',
+    startLabel: 'Entrada en la oficina',
+    endLabel: 'Salida de la oficina',
+  },
+  {
+    icon: '🏠',
+    title: 'Casa',
+    start: 'homeStart',
+    end: 'homeEnd',
+    startLabel: 'Entrada en casa',
+    endLabel: 'Salida de casa',
+  },
+] as const
 
 /** Total del día recalculado en cada cambio con el mismo motor que el backend. */
 function LiveTotal({ control, rules }: { control: Control<WorkdayFormValues>; rules: CalcRules }) {

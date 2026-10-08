@@ -36,6 +36,8 @@ Entra con **`admin@controlhorario.local`** / **`controlhorario-dev`** y sigue el
 Todo se calcula en minutos enteros a partir de los fichajes; no se guarda ningún total.
 
 - **Día:** `trabajado = (salida − entrada) − max(0, desayuno − 20 min) − max(comida, 30 min) − otras pausas`.
+  Un día **mixto** tiene dos tramos (oficina y casa, cada uno con su entrada y su salida): cuenta la suma
+  de los dos y el hueco entre ellos no se trabaja.
 - **Redondeo a 15 min sin deriva:** se redondea el acumulado del mes y cada día recibe la diferencia.
 - **Mes:** teóricas (laborables sin ausencia, medio día = mitad), hechas, diferencia **con signo**,
   saldo acumulado, vacaciones, puentes recuperables y teletrabajo (el límite es solo el %; los días en

@@ -2,6 +2,7 @@ package com.controlhorario.summary;
 
 import static org.hamcrest.Matchers.hasSize;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -171,12 +172,20 @@ class SummaryApiIT extends DomainApiTestSupport {
     }
 
     @Test
-    void monthUsesThePeriodWithMoreDaysInTheMonth() throws Exception {
+    void monthPrefersTheSelectedPeriodAndOtherwiseTheOneWithMoreDays() throws Exception {
         User user = newUser();
         UUID current = createExcelPeriod(user);
         UUID next = createPeriod(user, period("2027-2028", "2027-05-26", "2028-05-25"));
 
-        // Mayo de 2027: 25 días en el periodo actual y 6 en el siguiente.
+        // Mayo de 2027: 25 días en el periodo actual y 6 en el siguiente, que está seleccionado (último creado).
+        mvc.perform(get("/api/summary/month").param("year", "2027").param("month", "5").with(as(user)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.periodId").value(next.toString()));
+        // El seleccionado no toca junio de 2026: el que tiene más días.
+        mvc.perform(get("/api/summary/month").param("year", "2026").param("month", "6").with(as(user)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.periodId").value(current.toString()));
+        mvc.perform(put("/api/periods/" + current + "/select").with(as(user))).andExpect(status().isNoContent());
         mvc.perform(get("/api/summary/month").param("year", "2027").param("month", "5").with(as(user)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.periodId").value(current.toString()))
@@ -227,6 +236,36 @@ class SummaryApiIT extends DomainApiTestSupport {
                 .andExpect(jsonPath("$.vacations").isEmpty())
                 .andExpect(jsonPath("$.balanceToDateMinutes").value(0))
                 .andExpect(jsonPath("$.todayIsWorkingDay").value(false))
+                .andExpect(jsonPath("$.todayWorkday").isEmpty());
+    }
+
+    @Test
+    void dashboardFollowsTheSelectedPeriodEvenIfItDoesNotIncludeToday() throws Exception {
+        User user = newUser();
+        UUID current = createExcelPeriod(user);
+        UUID next = createPeriod(user, period("2027-2028", "2027-05-26", "2028-05-25"));
+
+        // El nuevo queda seleccionado y aún no ha empezado: su primer mes y nada hecho hasta hoy.
+        mvc.perform(get("/api/summary/dashboard").with(as(user)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.today").value("2026-10-07"))
+                .andExpect(jsonPath("$.period.id").value(next.toString()))
+                .andExpect(jsonPath("$.currentMonth.month").value("2027-05"))
+                .andExpect(jsonPath("$.currentMonth.theoreticalToDateMinutes").value(0))
+                .andExpect(jsonPath("$.balanceToDateMinutes").value(0))
+                .andExpect(jsonPath("$.todayIsWorkingDay").value(false));
+
+        mvc.perform(put("/api/periods/" + current + "/select").with(as(user))).andExpect(status().isNoContent());
+        mvc.perform(get("/api/summary/dashboard").with(as(user)))
+                .andExpect(jsonPath("$.period.id").value(current.toString()))
+                .andExpect(jsonPath("$.currentMonth.month").value("2026-10"))
+                .andExpect(jsonPath("$.todayIsWorkingDay").value(true));
+
+        // Un periodo ya terminado: su último mes.
+        UUID past = createPeriod(user, period("2025-2026", "2025-05-26", "2026-05-25"));
+        mvc.perform(get("/api/summary/dashboard").with(as(user)))
+                .andExpect(jsonPath("$.period.id").value(past.toString()))
+                .andExpect(jsonPath("$.currentMonth.month").value("2026-05"))
                 .andExpect(jsonPath("$.todayWorkday").isEmpty());
     }
 

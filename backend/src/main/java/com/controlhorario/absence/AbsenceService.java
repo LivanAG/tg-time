@@ -9,23 +9,26 @@ import com.controlhorario.common.audit.AuditService;
 import com.controlhorario.common.web.NotFoundException;
 import com.controlhorario.common.web.ValidationException;
 import com.controlhorario.period.PeriodRulesFactory;
+import com.controlhorario.period.PeriodService;
 import com.controlhorario.period.WorkPeriod;
-import com.controlhorario.period.WorkPeriodRepository;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/** Ausencias por día del usuario. Solo se pueden marcar en días laborables de un periodo. */
+/**
+ * Ausencias por día. Cada periodo tiene las suyas: todas las operaciones van sobre el periodo indicado o,
+ * sin él, sobre el seleccionado. Solo se pueden marcar en días laborables del periodo.
+ */
 @Service
 public class AbsenceService {
 
     private final AbsenceRepository absences;
-    private final WorkPeriodRepository periods;
+    private final PeriodService periods;
     private final PeriodRulesFactory rulesFactory;
     private final AbsenceMapper mapper;
     private final AuditService audit;
 
-    public AbsenceService(AbsenceRepository absences, WorkPeriodRepository periods, PeriodRulesFactory rulesFactory,
+    public AbsenceService(AbsenceRepository absences, PeriodService periods, PeriodRulesFactory rulesFactory,
             AbsenceMapper mapper, AuditService audit) {
         this.absences = absences;
         this.periods = periods;
@@ -35,28 +38,30 @@ public class AbsenceService {
     }
 
     @Transactional(readOnly = true)
-    public List<AbsenceDto> list(UUID userId, LocalDate from, LocalDate to) {
+    public List<AbsenceDto> list(UUID userId, UUID periodId, LocalDate from, LocalDate to) {
         if (to.isBefore(from)) {
             throw new ValidationException("to", "La fecha final debe ser igual o posterior a la inicial");
         }
-        return mapper.toDtos(absences.findByUserIdAndDateBetweenOrderByDate(userId, from, to));
+        WorkPeriod period = periods.resolve(userId, periodId);
+        return mapper.toDtos(absences.findByPeriodIdAndDateBetweenOrderByDate(period.getId(), from, to));
     }
 
     @Transactional(readOnly = true)
-    public AbsenceDto get(UUID userId, LocalDate date) {
-        return mapper.toDto(require(userId, date));
+    public AbsenceDto get(UUID userId, UUID periodId, LocalDate date) {
+        return mapper.toDto(require(periods.resolve(userId, periodId), date));
     }
 
     /** Crea o sustituye la ausencia del día (idempotente). */
     @Transactional
-    public AbsenceDto put(UUID userId, LocalDate date, AbsenceRequest request) {
-        WorkPeriod period = periods.findContaining(userId, date)
-                .orElseThrow(() -> new ValidationException("date", "No hay ningún periodo que incluya esta fecha"));
+    public AbsenceDto put(UUID userId, UUID periodId, LocalDate date, AbsenceRequest request) {
+        WorkPeriod period = periods.resolve(userId, periodId);
+        PeriodService.requireDateIn(period, date);
         PeriodCalendar calendar = rulesFactory.calendarFor(period);
         if (!calendar.isWorkingDay(date)) {
             throw new ValidationException("date", "Solo se pueden marcar ausencias en días laborables");
         }
-        Absence absence = absences.findByUserIdAndDate(userId, date).orElseGet(() -> new Absence(userId, date));
+        Absence absence = absences.findByPeriodIdAndDate(period.getId(), date)
+                .orElseGet(() -> new Absence(userId, period.getId(), date));
         absence.setType(request.type());
         absence.setHalfDay(Boolean.TRUE.equals(request.halfDay()));
         absence.setNote(blankToNull(request.note()));
@@ -64,15 +69,15 @@ public class AbsenceService {
     }
 
     @Transactional
-    public void delete(UUID userId, LocalDate date) {
-        Absence absence = require(userId, date);
+    public void delete(UUID userId, UUID periodId, LocalDate date) {
+        Absence absence = require(periods.resolve(userId, periodId), date);
         absences.delete(absence);
         absences.flush();
         audit.record(userId, "DELETE", "ABSENCE", absence.getId().toString());
     }
 
-    private Absence require(UUID userId, LocalDate date) {
-        return absences.findByUserIdAndDate(userId, date)
+    private Absence require(WorkPeriod period, LocalDate date) {
+        return absences.findByPeriodIdAndDate(period.getId(), date)
                 .orElseThrow(() -> new NotFoundException("No hay ninguna ausencia ese día"));
     }
 

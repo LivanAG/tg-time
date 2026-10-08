@@ -90,7 +90,7 @@ class ExcelWorkbookParserTest {
             assertThat(day.endTime()).as(name).isEqualTo(reference.end());
             assertThat(day.breaks()).as(name).containsExactlyInAnyOrderElementsOf(reference.breaks());
             assertThat(day.location()).as(name).isEqualTo(reference.location());
-            assertThat(day.remoteMinutes()).as(name).isNull();
+            assertThat(day.mixed()).as(name).isNull();
             assertThat(day.excelWorkedMinutes()).as(name).isEqualTo(row.excelWorkedMinutes());
             assertThat(day.representable()).as(name).isEqualTo(row.representable());
             assertThat(day.errors()).as(name).isEmpty();
@@ -105,7 +105,7 @@ class ExcelWorkbookParserTest {
         assertThat(representable).hasSize(222);
         for (ParsedDay day : representable) {
             WorkdayInput input = new WorkdayInput(day.date(), day.startTime(), day.endTime(), day.breaks(),
-                    day.location(), day.remoteMinutes());
+                    day.location(), day.mixed());
             assertThat(calculator.validate(input)).as(day.date().toString()).isEmpty();
             assertThat(calculator.calculate(input).workedMinutes()).as(day.date().toString())
                     .isEqualTo(day.excelWorkedMinutes());

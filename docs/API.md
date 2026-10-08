@@ -99,21 +99,34 @@ PeriodDto {
   "breakfastToleranceMin": 20, "minLunchMin": 30, "roundingStepMin": 15,
   "maxRemotePct": 50, "openingBalanceMin": 0,
   "intensiveRanges": [ { "startDate": "2026-06-15", "endDate": "2026-09-15" } ],
+  "selected": true,
   "version": 0
 }
 ```
 
+**Cada periodo tiene sus propios fichajes y ausencias**, así que los periodos pueden solaparse (p. ej. uno
+de pruebas junto al real). Las rutas de `/api/workdays` y `/api/absences` aceptan `?periodId=uuid`; sin él
+usan el periodo seleccionado. Fichar o marcar una ausencia fuera de las fechas del periodo → 400
+(`field: "date"`); sin ningún periodo → 400 (`field: "periodId"`).
+
+**Periodo seleccionado** (`selected`): el periodo con el que trabajan todas las pantallas. Se guarda en
+la cuenta (igual en todos los dispositivos). Si el usuario no ha elegido ninguno, es el que contiene hoy
+y, si tampoco hay, el más reciente; si tiene periodos, siempre hay exactamente uno con `selected: true`.
+
 - `GET /api/periods` → `[PeriodDto]` (más reciente primero)
-- `POST /api/periods` → 201 `PeriodDto`. Cuerpo = `PeriodDto` sin `id`/`version`, más
-  `"preloadHolidays": true` (por defecto true: carga los festivos de Madrid del periodo).
+- `POST /api/periods` → 201 `PeriodDto`. Cuerpo = `PeriodDto` sin `id`/`version`/`selected`, más
+  `"preloadHolidays": true` (por defecto true: carga los festivos de Madrid del periodo). El periodo
+  creado pasa a ser el seleccionado.
+- `PUT /api/periods/{id}/select` → 204. Lo marca como seleccionado (no cambia su `version`).
 - `GET /api/periods/{id}` → `PeriodDto`
-- `PUT /api/periods/{id}` → `PeriodDto`. Cuerpo = `PeriodDto` sin `id`, con `version` obligatoria
+- `PUT /api/periods/{id}` → `PeriodDto`. Cuerpo = `PeriodDto` sin `id`/`selected`, con `version` obligatoria
   (409 si no coincide). `intensiveRanges` se ignora aquí (ver abajo).
-- `DELETE /api/periods/{id}` → 204 (borra también sus festivos y rangos; no borra fichajes ni ausencias).
+- `DELETE /api/periods/{id}` → 204. Borra también sus festivos, rangos, **fichajes y ausencias**.
 
 Validación: `name` 1-100; `startDate < endDate`; rangos válidos (minutos > 0, `roundingStepMin` 1-60,
-`maxRemotePct` 0-100...); un periodo no puede solaparse con otro del mismo usuario (409); los rangos de
-intensiva deben estar dentro del periodo y no solaparse entre sí (400).
+`maxRemotePct` 0-100...); al cambiar las fechas no puede quedar ningún fichaje ni ausencia del periodo fuera
+de ellas (400 en `startDate`/`endDate`); los rangos de intensiva deben estar dentro del periodo y no solaparse
+entre sí (400).
 
 Valores por defecto que propone el frontend al crear (los del Excel): los del ejemplo de arriba.
 
@@ -140,13 +153,15 @@ CalendarDayDto { "date": "2026-10-12", "dayType": "LABORABLE" | "FIN_DE_SEMANA" 
 
 ## Registro diario — `/api/workdays`
 
+Todas las rutas aceptan `?periodId=uuid` (sin él, el periodo seleccionado): un fichaje por día y periodo.
+
 ```json
 WorkdayDto {
   "date": "2026-05-26", "startTime": "07:25", "endTime": "17:59",
   "breaks": [ { "type": "DESAYUNO", "startTime": "12:43", "endTime": "13:02" },
               { "type": "COMIDA",   "startTime": "15:02", "endTime": "15:32" } ],
   "location": "OFICINA" | "CASA" | "MIXTO",
-  "remoteMinutes": null, "notes": null,
+  "officeStart": null, "officeEnd": null, "homeStart": null, "homeEnd": null, "notes": null,
   "version": 3,
   "totals": { "grossMinutes": 634, "breakfastMinutes": 19, "breakfastDeductedMinutes": 0,
               "lunchMinutes": 30, "lunchDeductedMinutes": 30, "otherBreakMinutes": 0,
@@ -156,27 +171,38 @@ WorkdayDto {
 ```
 `breaks[].type`: `DESAYUNO` | `COMIDA` | `OTRA`. Máximo un desayuno y una comida.
 
+**Día MIXTO**: dos tramos, oficina (`officeStart`-`officeEnd`) y casa (`homeStart`-`homeEnd`), en
+cualquier orden y sin solaparse. `startTime`/`endTime` son la primera entrada y la última salida (se
+calculan; en el PUT pueden ir a null). El hueco entre los tramos no se trabaja: `grossMinutes` es la suma
+de los dos tramos. Las pausas deben caer dentro de un tramo, y lo que se descuenta de cada una resta a su
+tramo (`remoteMinutes` = tramo de casa menos sus descuentos). En el resto de ubicaciones los cuatro campos
+son null.
+
 - `GET /api/workdays?from=2026-06-01&to=2026-06-30` → `[WorkdayDto]` (rango máximo 400 días)
 - `GET /api/workdays/{date}` → `WorkdayDto` | 404
 - `PUT /api/workdays/{date}` → 200 `WorkdayDto` (crea o actualiza; idempotente). Cuerpo:
   ```json
-  { "startTime": "07:25", "endTime": "17:59", "breaks": [...], "location": "MIXTO",
-    "remoteMinutes": 240, "notes": null, "version": 3 }
+  { "startTime": null, "endTime": null, "breaks": [...], "location": "MIXTO",
+    "officeStart": "07:25", "officeEnd": "14:00", "homeStart": "15:00", "homeEnd": "17:59",
+    "notes": null, "version": 3 }
   ```
   `version`: null al crear; la del último GET al actualizar. 409 si no coincide o si se intenta crear
-  (version null) un día que ya existe. 400 si no hay periodo que incluya la fecha
+  (version null) un día que ya existe. 400 si la fecha está fuera del periodo
   (`field: "date"`), o con los errores de validación del cálculo (`field`: `startTime`, `endTime`,
-  `breaks[i]`, `remoteMinutes`). `notes` máx. 500; minutos ≥ 0. `remoteMinutes` solo se guarda con MIXTO.
+  `officeStart`, `officeEnd`, `homeStart`, `homeEnd`, `breaks[i]`). `notes` máx. 500. Los tramos solo se
+  guardan con MIXTO.
 - `DELETE /api/workdays/{date}` → 204 | 404
 
 ## Ausencias — `/api/absences`
+
+Como el registro diario: `?periodId=uuid` opcional (sin él, el periodo seleccionado); una ausencia por día y periodo.
 
 `AbsenceDto { "date": "2026-07-10", "type": "VACACIONES" | "PUENTE" | "PERMISO" | "BAJA", "halfDay": false, "note": null }`
 
 - `GET /api/absences?from=&to=` → `[AbsenceDto]`
 - `GET /api/absences/{date}` → `AbsenceDto` | 404
 - `PUT /api/absences/{date}` `{ "type", "halfDay", "note" }` → `AbsenceDto`. 400 si el día no es
-  laborable dentro de un periodo.
+  laborable dentro del periodo.
 - `DELETE /api/absences/{date}` → 204 | 404
 
 ---
@@ -184,8 +210,8 @@ WorkdayDto {
 ## Resúmenes — `/api/summary`
 
 ### `GET /api/summary/month?year=2026&month=6[&periodId=uuid]`
-Periodo por defecto: el que más días tenga dentro de ese mes (si empata, el más reciente). 404 si
-ningún periodo toca el mes.
+Periodo por defecto: el seleccionado si toca el mes; si no, el que más días tenga dentro de ese mes
+(si empata, el más reciente). 404 si ningún periodo toca el mes, o si `periodId` no lo toca.
 ```json
 MonthSummaryDto {
   "periodId": "uuid", "month": "2026-06", "status": "PAST" | "CURRENT" | "FUTURE",
@@ -232,8 +258,10 @@ PeriodSummaryDto {
 ```
 
 ### `GET /api/summary/dashboard`
-Usa el periodo que contiene hoy (en la zona horaria del usuario). Si no hay, `period` es null y el
-frontend muestra el asistente para crear el periodo.
+Usa el periodo seleccionado. `currentMonth` es el mes de hoy (en la zona horaria del usuario) si el
+periodo lo incluye; si ya terminó, su último mes; si aún no ha empezado, el primero. Los valores "hasta
+hoy" usan siempre la fecha real. Si el usuario no tiene periodos, `period` es null y el frontend muestra
+el asistente para crearlo.
 ```json
 DashboardDto {
   "today": "2026-10-07",
@@ -267,7 +295,8 @@ ImportResultDto {
   "days": [ { "date": "2026-06-01", "sheet": "Junio", "row": 7,
               "status": "NEW" | "EXISTS" | "FUTURE" | "OUT_OF_PERIOD" | "INVALID" | "NOT_REPRESENTABLE",
               "action": "IMPORT" | "SKIP",
-              "workday": { "startTime", "endTime", "breaks", "location", "remoteMinutes", "notes" },
+              "workday": { "startTime", "endTime", "breaks", "location", "officeStart", "officeEnd",
+                           "homeStart", "homeEnd", "notes" },
               "excelWorkedMinutes": 466, "computedWorkedMinutes": 466, "messages": [ "..." ] } ],
   "absences": [ { "date": "2026-07-10", "type": "VACACIONES", "action": "IMPORT" | "SKIP", "reason": "..." } ],
   "detectedSettings": { "breakfastToleranceMin": 20, "minLunchMin": 30, "maxRemotePct": 50,
@@ -281,6 +310,7 @@ ImportResultDto {
 ```
 400 si no es un .xlsx válido (tipo MIME, firma `PK\x03\x04`, sin macros) o no hay periodo; 413 si pasa de 2 MB.
 
-### `GET /api/export/xlsx?year=2026&month=6`
+### `GET /api/export/xlsx?year=2026&month=6[&periodId=uuid]`
+Sin `periodId`, el periodo con más días en el mes (404 si `periodId` no toca el mes).
 Descarga `horas-2026-06.xlsx` con el formato de la hoja mensual del Excel original (mismas columnas,
 por lo que se puede volver a importar).

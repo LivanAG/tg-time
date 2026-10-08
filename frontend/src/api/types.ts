@@ -116,14 +116,19 @@ export interface PeriodDto {
   maxRemotePct: number
   openingBalanceMin: number
   intensiveRanges: IntensiveRangeDto[]
+  /** Periodo con el que trabaja la app (selector global). La API marca exactamente uno si hay alguno. */
+  selected: boolean
   version: number
 }
 
-/** Cuerpo de POST /api/periods: PeriodDto sin id ni version, más preloadHolidays. */
-export type CreatePeriodRequest = Omit<PeriodDto, 'id' | 'version'> & { preloadHolidays: boolean }
+/** Parámetros editables de un periodo (sin id, version ni selected). */
+export type PeriodParameters = Omit<PeriodDto, 'id' | 'version' | 'selected'>
+
+/** Cuerpo de POST /api/periods: los parámetros más preloadHolidays. */
+export type CreatePeriodRequest = PeriodParameters & { preloadHolidays: boolean }
 
 /** Cuerpo de PUT /api/periods/{id}: PeriodDto sin id, con version obligatoria. */
-export type UpdatePeriodRequest = Omit<PeriodDto, 'id'>
+export type UpdatePeriodRequest = PeriodParameters & { version: number }
 
 export type HolidayScope = 'NACIONAL' | 'AUTONOMICO' | 'LOCAL' | 'EMPRESA'
 
@@ -181,7 +186,11 @@ export interface WorkdayDto {
   endTime: TimeOfDay
   breaks: BreakDto[]
   location: WorkLocation
-  remoteMinutes: number | null
+  /** Solo con MIXTO (null en otro caso): tramo de oficina y de casa. startTime/endTime son el primero y el último. */
+  officeStart: TimeOfDay | null
+  officeEnd: TimeOfDay | null
+  homeStart: TimeOfDay | null
+  homeEnd: TimeOfDay | null
   notes: string | null
   version: number
   totals: WorkdayTotalsDto
@@ -194,7 +203,11 @@ export interface WorkdayRequest {
   endTime: TimeOfDay | null
   breaks: BreakDto[]
   location: WorkLocation
-  remoteMinutes: number | null
+  /** Solo con MIXTO; startTime/endTime se calculan a partir de los tramos. */
+  officeStart: TimeOfDay | null
+  officeEnd: TimeOfDay | null
+  homeStart: TimeOfDay | null
+  homeEnd: TimeOfDay | null
   notes: string | null
   version: number | null
 }
@@ -397,7 +410,10 @@ export interface ImportWorkdayDto {
   endTime: TimeOfDay | null
   breaks: BreakDto[]
   location: WorkLocation | null
-  remoteMinutes: number | null
+  officeStart: TimeOfDay | null
+  officeEnd: TimeOfDay | null
+  homeStart: TimeOfDay | null
+  homeEnd: TimeOfDay | null
   notes: string | null
 }
 

@@ -53,6 +53,7 @@ export const periodsApi = {
   create: (body: CreatePeriodRequest) => apiRequest<PeriodDto>('/periods', { method: 'POST', body }),
   update: (id: string, body: UpdatePeriodRequest) => apiRequest<PeriodDto>(`/periods/${id}`, { method: 'PUT', body }),
   remove: (id: string) => apiRequest<void>(`/periods/${id}`, { method: 'DELETE' }),
+  select: (id: string) => apiRequest<void>(`/periods/${id}/select`, { method: 'PUT' }),
   intensiveRanges: (id: string) => apiRequest<IntensiveRangeDto[]>(`/periods/${id}/intensive-ranges`),
   saveIntensiveRanges: (id: string, ranges: IntensiveRangeDto[]) =>
     apiRequest<IntensiveRangeDto[]>(`/periods/${id}/intensive-ranges`, { method: 'PUT', body: ranges }),
@@ -67,20 +68,28 @@ export const periodsApi = {
 
 // Registro diario y ausencias ---------------------------------------------------------------
 
+// Cada periodo tiene sus propios fichajes y ausencias: todas las llamadas indican el periodo.
+
 export const workdaysApi = {
-  list: (from: IsoDate, to: IsoDate) => apiRequest<WorkdayDto[]>('/workdays', { query: { from, to } }),
-  /** null si ese día no tiene registro (404). */
-  get: (date: IsoDate) => apiRequestOrNull<WorkdayDto>(`/workdays/${date}`),
-  save: (date: IsoDate, body: WorkdayRequest) => apiRequest<WorkdayDto>(`/workdays/${date}`, { method: 'PUT', body }),
-  remove: (date: IsoDate) => apiRequest<void>(`/workdays/${date}`, { method: 'DELETE' }),
+  list: (from: IsoDate, to: IsoDate, periodId: string) =>
+    apiRequest<WorkdayDto[]>('/workdays', { query: { from, to, periodId } }),
+  /** null si ese día no tiene registro en el periodo (404). */
+  get: (date: IsoDate, periodId: string) => apiRequestOrNull<WorkdayDto>(`/workdays/${date}`, { query: { periodId } }),
+  save: (date: IsoDate, periodId: string, body: WorkdayRequest) =>
+    apiRequest<WorkdayDto>(`/workdays/${date}`, { method: 'PUT', body, query: { periodId } }),
+  remove: (date: IsoDate, periodId: string) =>
+    apiRequest<void>(`/workdays/${date}`, { method: 'DELETE', query: { periodId } }),
 }
 
 export const absencesApi = {
-  list: (from: IsoDate, to: IsoDate) => apiRequest<AbsenceDto[]>('/absences', { query: { from, to } }),
-  /** null si ese día no tiene ausencia (404). */
-  get: (date: IsoDate) => apiRequestOrNull<AbsenceDto>(`/absences/${date}`),
-  save: (date: IsoDate, body: AbsenceRequest) => apiRequest<AbsenceDto>(`/absences/${date}`, { method: 'PUT', body }),
-  remove: (date: IsoDate) => apiRequest<void>(`/absences/${date}`, { method: 'DELETE' }),
+  list: (from: IsoDate, to: IsoDate, periodId: string) =>
+    apiRequest<AbsenceDto[]>('/absences', { query: { from, to, periodId } }),
+  /** null si ese día no tiene ausencia en el periodo (404). */
+  get: (date: IsoDate, periodId: string) => apiRequestOrNull<AbsenceDto>(`/absences/${date}`, { query: { periodId } }),
+  save: (date: IsoDate, periodId: string, body: AbsenceRequest) =>
+    apiRequest<AbsenceDto>(`/absences/${date}`, { method: 'PUT', body, query: { periodId } }),
+  remove: (date: IsoDate, periodId: string) =>
+    apiRequest<void>(`/absences/${date}`, { method: 'DELETE', query: { periodId } }),
 }
 
 // Resúmenes ---------------------------------------------------------------------------------
@@ -107,6 +116,6 @@ export const importExportApi = {
     form.append('overwrite', String(options.overwrite))
     return apiRequest<ImportResultDto>('/import/xlsx', { method: 'POST', body: form })
   },
-  exportXlsx: (year: number, month: number) =>
-    apiDownload('/export/xlsx', { year, month }, `horas-${year}-${String(month).padStart(2, '0')}.xlsx`),
+  exportXlsx: (year: number, month: number, periodId?: string | null) =>
+    apiDownload('/export/xlsx', { year, month, periodId }, `horas-${year}-${String(month).padStart(2, '0')}.xlsx`),
 }

@@ -51,7 +51,7 @@ fechas erróneas: en `Mayo 26` las filas 21-25 dicen 11-15/06 y en `Agosto` las 
 | K | desayuno descontado (fórmula) | — |
 | L | Total Día (fórmula) | `excelWorkedMinutes`, para comparar con el cálculo |
 | M | ubicación: `O` oficina, `C` casa, `M` mixto | `location` (vacía → OFICINA con mensaje) |
-| N / O | inicio / fin del tramo en casa (MIXTO, "teletrabajo tardes") | `remoteMinutes = O - N` |
+| N / O | inicio / fin del tramo en casa (MIXTO, "teletrabajo tardes") | tramo `homeStart`-`homeEnd`; la oficina es el resto de B-I (ver abajo) |
 | P | redondeado (MROUND por día) | no se importa: se recalcula sin deriva |
 | V / AC | JIRA / IZERTIA (imputaciones) | no se importan: la app no las usa |
 
@@ -67,6 +67,12 @@ Si `J > 0` pero E/F están vacías:
 
 Con las reglas anteriores, **los 222 días representables del Excel dan exactamente el Total Día (L)**
 (ver `WorkdayCalculatorTest`). Si `computedWorkedMinutes ≠ excelWorkedMinutes` se cuenta en `mismatches`.
+
+### Días mixtos (M)
+El tramo en casa N/O debe empezar a la entrada (B) o terminar a la salida (I); la oficina es el resto de
+la jornada. Si una "otra pausa" (G/H) está pegada al tramo en casa, es el hueco entre los dos tramos (no
+trabajado): se quita de las pausas y la oficina termina (o empieza) donde ella. Un tramo en casa en mitad de
+la jornada (oficina antes y después) no se puede representar: el día queda `INVALID`.
 
 ## Datos que no son reales
 
@@ -92,6 +98,7 @@ Las ausencias propuestas siguen la misma lógica (`EXISTS` si ya hay ausencia o 
 ## Exportación
 
 `GET /api/export/xlsx?year=&month=` genera una hoja con el mismo diseño (cabecera F1-F3, J1/J2, L1/L2;
-filas 7-39 por la misma rejilla; columnas B-I, M, N/O; L y P con los valores calculados; subtotales
+filas 7-39 por la misma rejilla; columnas B-I, M, N/O (en un día mixto, el hueco entre tramos va en
+G/H si no hay otra pausa); L y P con los valores calculados; subtotales
 semanales en L/P de las filas 12, 19, 26, 33, 40; pie: C46 teóricas, C47 hechas, C48 faltan, C49 sobran
 y las vacaciones en C53). Debe poder **reimportarse** y dar los mismos datos (test de ida y vuelta).

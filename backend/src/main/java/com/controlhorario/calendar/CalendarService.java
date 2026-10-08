@@ -48,10 +48,10 @@ public class CalendarService {
         LocalDate end = period.getEndDate();
 
         Map<LocalDate, Absence> absenceByDate = new HashMap<>();
-        for (Absence a : absences.findByUserIdAndDateBetweenOrderByDate(userId, start, end)) {
+        for (Absence a : absences.findByPeriodIdAndDateBetweenOrderByDate(period.getId(), start, end)) {
             absenceByDate.put(a.getDate(), a);
         }
-        Set<LocalDate> workdayDates = new HashSet<>(workdays.findDatesBetween(userId, start, end));
+        Set<LocalDate> workdayDates = new HashSet<>(workdays.findDatesBetween(period.getId(), start, end));
 
         List<CalendarDayDto> days = new ArrayList<>();
         for (LocalDate date = start; !date.isAfter(end); date = date.plusDays(1)) {

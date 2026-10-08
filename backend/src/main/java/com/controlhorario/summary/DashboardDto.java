@@ -8,7 +8,9 @@ import com.controlhorario.workday.IssueDto;
 import com.controlhorario.workday.WorkdayDto;
 
 /**
- * Indicadores de la portada con el periodo que contiene hoy (en la zona horaria del usuario).
+ * Indicadores de la portada con el periodo seleccionado. {@code currentMonth} es el mes de hoy si el
+ * periodo lo incluye; si no, su último mes (periodo terminado) o el primero (aún no empezado). Hoy
+ * está fuera del periodo si {@code today} no cae entre {@code period.startDate} y {@code period.endDate}.
  * Sin periodo: {@code period}, {@code currentMonth} y {@code vacations} son null y los minutos 0.
  */
 public record DashboardDto(

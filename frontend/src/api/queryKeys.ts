@@ -8,10 +8,10 @@ export const queryKeys = {
   periods: ['periods'] as const,
   holidays: (periodId: string) => ['holidays', periodId] as const,
   calendar: (periodId: string) => ['calendar', periodId] as const,
-  month: (month: YearMonth) => ['month', month] as const,
+  month: (month: YearMonth, periodId: string) => ['month', month, periodId] as const,
   periodSummary: (periodId: string) => ['period-summary', periodId] as const,
-  workday: (date: IsoDate) => ['workday', date] as const,
-  absence: (date: IsoDate) => ['absence', date] as const,
+  workday: (date: IsoDate, periodId: string) => ['workday', date, periodId] as const,
+  absence: (date: IsoDate, periodId: string) => ['absence', date, periodId] as const,
   adminUsers: ['admin-users'] as const,
 }
 

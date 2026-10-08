@@ -9,8 +9,10 @@ import com.fasterxml.jackson.annotation.JsonFormat;
 /**
  * Fichaje de un día con sus totales y avisos calculados.
  *
- * @param remoteMinutes minutos en casa indicados (solo con MIXTO; null en otro caso)
- * @param version       versión para el bloqueo optimista
+ * @param startTime   entrada (en MIXTO, la primera de los dos tramos)
+ * @param endTime     salida (en MIXTO, la última de los dos tramos)
+ * @param officeStart solo con MIXTO (null en otro caso): tramo de oficina y de casa
+ * @param version     versión para el bloqueo optimista
  */
 public record WorkdayDto(
         LocalDate date,
@@ -18,7 +20,10 @@ public record WorkdayDto(
         @JsonFormat(pattern = "HH:mm") LocalTime endTime,
         List<BreakDto> breaks,
         Location location,
-        Integer remoteMinutes,
+        @JsonFormat(pattern = "HH:mm") LocalTime officeStart,
+        @JsonFormat(pattern = "HH:mm") LocalTime officeEnd,
+        @JsonFormat(pattern = "HH:mm") LocalTime homeStart,
+        @JsonFormat(pattern = "HH:mm") LocalTime homeEnd,
         String notes,
         Long version,
         WorkdayTotalsDto totals,

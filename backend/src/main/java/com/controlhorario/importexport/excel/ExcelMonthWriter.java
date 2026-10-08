@@ -20,6 +20,7 @@ import com.controlhorario.summary.calc.MonthSummary;
 import com.controlhorario.workday.BreakType;
 import com.controlhorario.workday.Location;
 import com.controlhorario.workday.calc.BreakInput;
+import com.controlhorario.workday.calc.MixedTimes;
 import com.controlhorario.workday.calc.WorkdayCalculator;
 import com.controlhorario.workday.calc.WorkdayInput;
 import com.controlhorario.workday.calc.WorkdayResult;
@@ -218,6 +219,7 @@ public final class ExcelMonthWriter {
             writeBreak(row, workday.breaks(), BreakType.DESAYUNO, ExcelLayout.COL_BREAKFAST_START, styles);
             writeBreak(row, workday.breaks(), BreakType.COMIDA, ExcelLayout.COL_LUNCH_START, styles);
             writeBreak(row, workday.breaks(), BreakType.OTRA, ExcelLayout.COL_OTHER_START, styles);
+            writeMixedGap(row, workday, styles);
             if (result != null) {
                 duration(row, ExcelLayout.COL_LUNCH_TOTAL, result.lunchDeductedMinutes(), styles.time);
                 duration(row, ExcelLayout.COL_BREAKFAST_DEDUCTED, result.breakfastDeductedMinutes(), styles.time);
@@ -227,11 +229,9 @@ public final class ExcelMonthWriter {
                 duration(row, ExcelLayout.COL_ROUNDED, day.roundedMinutes(), styles.time);
             }
             text(row, ExcelLayout.COL_LOCATION, locationCode(workday.location()), styles.center);
-            if (workday.location() == Location.MIXTO && workday.remoteMinutes() != null && workday.remoteMinutes() > 0) {
-                // Tramo en casa al final de la jornada ("teletrabajo tardes"): N = salida - minutos en casa.
-                int remote = Math.min(workday.remoteMinutes(), Minutes.between(workday.start(), workday.end()));
-                time(row, ExcelLayout.COL_REMOTE_START, workday.end().minusMinutes(remote), styles.time);
-                time(row, ExcelLayout.COL_REMOTE_END, workday.end(), styles.time);
+            if (workday.mixed() != null) {
+                time(row, ExcelLayout.COL_REMOTE_START, workday.mixed().homeStart(), styles.time);
+                time(row, ExcelLayout.COL_REMOTE_END, workday.mixed().homeEnd(), styles.time);
             }
         }
 
@@ -291,6 +291,24 @@ public final class ExcelMonthWriter {
                     time(row, startColumn, b.start(), styles.time);
                     time(row, startColumn + 1, b.end(), styles.time);
                 });
+    }
+
+    /**
+     * El hueco entre los tramos de un día mixto no se trabaja: en el Excel (L = I - B - pausas) va como
+     * "otra pausa" (G/H) si está libre, y la importación lo reconoce al lado del tramo en casa (N/O).
+     */
+    private static void writeMixedGap(Row row, WorkdayInput workday, Styles styles) {
+        MixedTimes m = workday.mixed();
+        if (m == null || workday.breaks().stream().anyMatch(b -> b.type() == BreakType.OTRA)) {
+            return;
+        }
+        boolean homeLast = m.homeStart().isAfter(m.officeStart());
+        LocalTime gapStart = homeLast ? m.officeEnd() : m.homeEnd();
+        LocalTime gapEnd = homeLast ? m.homeStart() : m.officeStart();
+        if (gapEnd.isAfter(gapStart)) {
+            time(row, ExcelLayout.COL_OTHER_START, gapStart, styles.time);
+            time(row, ExcelLayout.COL_OTHER_START + 1, gapEnd, styles.time);
+        }
     }
 
     private static String locationCode(Location location) {

@@ -2,6 +2,7 @@ package com.controlhorario.workday;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.UUID;
 
 import jakarta.validation.Valid;
 
@@ -19,7 +20,10 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-/** Registro diario: un fichaje por día con sus pausas. */
+/**
+ * Registro diario: un fichaje por día y periodo, con sus pausas. {@code periodId} opcional: sin él, el
+ * periodo seleccionado.
+ */
 @RestController
 @RequestMapping("/api/workdays")
 public class WorkdayController {
@@ -35,25 +39,27 @@ public class WorkdayController {
     /** Fichajes del rango (máximo 400 días). */
     @GetMapping
     public List<WorkdayDto> list(@RequestParam @DateTimeFormat(iso = ISO.DATE) LocalDate from,
-            @RequestParam @DateTimeFormat(iso = ISO.DATE) LocalDate to) {
-        return service.list(currentUser.id(), from, to);
+            @RequestParam @DateTimeFormat(iso = ISO.DATE) LocalDate to, @RequestParam(required = false) UUID periodId) {
+        return service.list(currentUser.id(), periodId, from, to);
     }
 
     @GetMapping("/{date}")
-    public WorkdayDto get(@PathVariable @DateTimeFormat(iso = ISO.DATE) LocalDate date) {
-        return service.get(currentUser.id(), date);
+    public WorkdayDto get(@PathVariable @DateTimeFormat(iso = ISO.DATE) LocalDate date,
+            @RequestParam(required = false) UUID periodId) {
+        return service.get(currentUser.id(), periodId, date);
     }
 
     /** Crea o actualiza el día (idempotente). */
     @PutMapping("/{date}")
     public WorkdayDto put(@PathVariable @DateTimeFormat(iso = ISO.DATE) LocalDate date,
-            @Valid @RequestBody WorkdayRequest request) {
-        return service.put(currentUser.id(), date, request);
+            @RequestParam(required = false) UUID periodId, @Valid @RequestBody WorkdayRequest request) {
+        return service.put(currentUser.id(), periodId, date, request);
     }
 
     @DeleteMapping("/{date}")
-    public ResponseEntity<Void> delete(@PathVariable @DateTimeFormat(iso = ISO.DATE) LocalDate date) {
-        service.delete(currentUser.id(), date);
+    public ResponseEntity<Void> delete(@PathVariable @DateTimeFormat(iso = ISO.DATE) LocalDate date,
+            @RequestParam(required = false) UUID periodId) {
+        service.delete(currentUser.id(), periodId, date);
         return ResponseEntity.noContent().build();
     }
 }

@@ -12,14 +12,17 @@ import org.springframework.data.jpa.repository.Query;
 public interface WorkdayRepository extends JpaRepository<Workday, UUID> {
 
     @EntityGraph(attributePaths = "breaks")
-    Optional<Workday> findByUserIdAndDate(UUID userId, LocalDate date);
+    Optional<Workday> findByPeriodIdAndDate(UUID periodId, LocalDate date);
 
     @EntityGraph(attributePaths = "breaks")
-    List<Workday> findByUserIdAndDateBetweenOrderByDate(UUID userId, LocalDate from, LocalDate to);
+    List<Workday> findByPeriodIdAndDateBetweenOrderByDate(UUID periodId, LocalDate from, LocalDate to);
 
-    boolean existsByUserIdAndDate(UUID userId, LocalDate date);
+    /** Para no dejar fichajes fuera de las fechas al acortar un periodo. */
+    boolean existsByPeriodIdAndDateBefore(UUID periodId, LocalDate date);
+
+    boolean existsByPeriodIdAndDateAfter(UUID periodId, LocalDate date);
 
     /** Solo las fechas con fichaje (calendario: hasWorkday), sin cargar las pausas. */
-    @Query("select w.date from Workday w where w.userId = :userId and w.date between :from and :to")
-    List<LocalDate> findDatesBetween(UUID userId, LocalDate from, LocalDate to);
+    @Query("select w.date from Workday w where w.periodId = :periodId and w.date between :from and :to")
+    List<LocalDate> findDatesBetween(UUID periodId, LocalDate from, LocalDate to);
 }

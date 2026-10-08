@@ -53,8 +53,9 @@ public class ImportExportController {
     }
 
     @GetMapping("/export/xlsx")
-    public ResponseEntity<byte[]> exportXlsx(@RequestParam int year, @RequestParam int month) {
-        ExportService.ExportedFile file = exportService.exportMonth(currentUser.id(), year, month);
+    public ResponseEntity<byte[]> exportXlsx(@RequestParam int year, @RequestParam int month,
+            @RequestParam(required = false) UUID periodId) {
+        ExportService.ExportedFile file = exportService.exportMonth(currentUser.id(), year, month, periodId);
         return ResponseEntity.ok()
                 .contentType(XLSX)
                 .header(HttpHeaders.CONTENT_DISPOSITION,

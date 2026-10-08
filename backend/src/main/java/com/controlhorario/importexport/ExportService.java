@@ -61,7 +61,8 @@ public class ExportService {
     }
 
     @Transactional(readOnly = true)
-    public ExportedFile exportMonth(UUID userId, int year, int month) {
+    /** @param periodId periodo a usar; null = el que tiene más días en el mes */
+    public ExportedFile exportMonth(UUID userId, int year, int month, UUID periodId) {
         if (year < MIN_YEAR || year > MAX_YEAR) {
             throw new ValidationException("year", "El año debe estar entre " + MIN_YEAR + " y " + MAX_YEAR);
         }
@@ -70,15 +71,19 @@ public class ExportService {
         }
         YearMonth yearMonth = YearMonth.of(year, month);
         User user = users.findById(userId).orElseThrow(() -> new NotFoundException("Usuario no encontrado"));
-        WorkPeriod period = periodFor(userId, yearMonth);
+        WorkPeriod period = periodId == null
+                ? periodFor(userId, yearMonth)
+                : ownedPeriodIn(userId, periodId, yearMonth);
         PeriodRules rules = rulesFactory.rulesFor(period);
 
         LocalDate from = yearMonth.atDay(1);
         LocalDate to = yearMonth.atEndOfMonth();
-        List<WorkdayInput> monthWorkdays = workdays.findByUserIdAndDateBetweenOrderByDate(userId, from, to).stream()
+        List<WorkdayInput> monthWorkdays = workdays.findByPeriodIdAndDateBetweenOrderByDate(period.getId(), from, to)
+                .stream()
                 .map(WorkdayInputs::from)
                 .toList();
-        List<AbsenceInput> monthAbsences = absences.findByUserIdAndDateBetweenOrderByDate(userId, from, to).stream()
+        List<AbsenceInput> monthAbsences = absences.findByPeriodIdAndDateBetweenOrderByDate(period.getId(), from, to)
+                .stream()
                 .map(AbsenceInputs::from)
                 .toList();
         MonthSummary summary = monthSummaryService.summarize(new PeriodCalendar(rules), yearMonth, monthWorkdays,
@@ -87,6 +92,12 @@ public class ExportService {
         byte[] content = writer.write(new ExcelMonthWriter.MonthData(user.getName(), user.getCompany(), rules, summary,
                 monthWorkdays));
         return new ExportedFile(String.format("horas-%04d-%02d.xlsx", year, month), content);
+    }
+
+    private WorkPeriod ownedPeriodIn(UUID userId, UUID periodId, YearMonth month) {
+        return periods.findByIdAndUserId(periodId, userId)
+                .filter(p -> PeriodCalendar.datesOf(month).stream().anyMatch(p::contains))
+                .orElseThrow(() -> new NotFoundException("El periodo no incluye ese mes"));
     }
 
     /** El periodo del usuario con más días dentro del mes (empate: el más reciente); 404 si ninguno lo toca. */

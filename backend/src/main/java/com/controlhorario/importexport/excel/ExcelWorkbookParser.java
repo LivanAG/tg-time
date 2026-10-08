@@ -21,6 +21,7 @@ import com.controlhorario.common.calc.Minutes;
 import com.controlhorario.workday.BreakType;
 import com.controlhorario.workday.Location;
 import com.controlhorario.workday.calc.BreakInput;
+import com.controlhorario.workday.calc.MixedTimes;
 
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
@@ -152,14 +153,14 @@ public final class ExcelWorkbookParser {
         List<String> remoteProblems = location == Location.MIXTO ? errors : messages;
         LocalTime remoteStart = time(row, ExcelLayout.COL_REMOTE_START, remoteProblems);
         LocalTime remoteEnd = time(row, ExcelLayout.COL_REMOTE_END, remoteProblems);
-        Integer remoteMinutes = null;
+        MixedTimes mixed = null;
         if (location == Location.MIXTO) {
             if (remoteStart == null || remoteEnd == null) {
                 messages.add("Ubicación mixta sin el tramo en casa completo (N/O)");
             } else if (!remoteEnd.isAfter(remoteStart)) {
                 errors.add("El tramo en casa (N/O) debe terminar después de empezar");
-            } else {
-                remoteMinutes = Minutes.between(remoteStart, remoteEnd);
+            } else if (start != null && end != null) {
+                mixed = mixedTimes(start, end, remoteStart, remoteEnd, breaks, errors);
             }
         } else if (remoteStart != null || remoteEnd != null) {
             messages.add("Hay un tramo en casa (N/O) pero la ubicación no es mixta: se ignora");
@@ -167,8 +168,37 @@ public final class ExcelWorkbookParser {
 
         Integer excelWorked = duration(row, ExcelLayout.COL_WORKED, "Total Día", messages);
 
-        return new ParsedDay(date, sheet, r, start, end, breaks, location, remoteMinutes, excelWorked,
+        return new ParsedDay(date, sheet, r, start, end, breaks, location, mixed, excelWorked,
                 representable, errors, messages);
+    }
+
+    /**
+     * Tramos de un día mixto del Excel: la jornada es B-I y el tramo en casa N/O, que empieza a la entrada
+     * o termina a la salida; la oficina es el resto. Una pausa OTRA (G/H) pegada al tramo en casa es el
+     * hueco entre los dos tramos (así lo escribe la exportación) y se quita de las pausas.
+     */
+    static MixedTimes mixedTimes(LocalTime start, LocalTime end, LocalTime homeStart, LocalTime homeEnd,
+            List<BreakInput> breaks, List<String> errors) {
+        if (homeEnd.equals(end) && homeStart.isAfter(start)) {
+            BreakInput gap = breaks.stream()
+                    .filter(b -> b.type() == BreakType.OTRA && b.end().equals(homeStart))
+                    .findFirst().orElse(null);
+            if (gap != null) {
+                breaks.remove(gap);
+            }
+            return new MixedTimes(start, gap == null ? homeStart : gap.start(), homeStart, homeEnd);
+        }
+        if (homeStart.equals(start) && homeEnd.isBefore(end)) {
+            BreakInput gap = breaks.stream()
+                    .filter(b -> b.type() == BreakType.OTRA && b.start().equals(homeEnd))
+                    .findFirst().orElse(null);
+            if (gap != null) {
+                breaks.remove(gap);
+            }
+            return new MixedTimes(gap == null ? homeEnd : gap.end(), end, homeStart, homeEnd);
+        }
+        errors.add("El tramo en casa (N/O) debe empezar a la entrada (B) o terminar a la salida (I)");
+        return null;
     }
 
     private static Location location(Row row, List<String> messages) {

@@ -10,7 +10,8 @@ import org.mapstruct.Mapping;
 public interface PeriodMapper {
 
     @Mapping(target = "intensiveRanges", source = "intensiveRanges")
-    PeriodDto toDto(WorkPeriod period, List<IntensiveRange> intensiveRanges);
+    @Mapping(target = "selected", source = "selected")
+    PeriodDto toDto(WorkPeriod period, List<IntensiveRange> intensiveRanges, boolean selected);
 
     IntensiveRangeDto toDto(IntensiveRange range);
 

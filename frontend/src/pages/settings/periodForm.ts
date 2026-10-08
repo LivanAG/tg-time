@@ -1,6 +1,12 @@
 import { z } from 'zod'
 
-import type { CreatePeriodRequest, IntensiveRangeDto, PeriodDto, UpdatePeriodRequest } from '../../api/types'
+import type {
+  CreatePeriodRequest,
+  IntensiveRangeDto,
+  PeriodDto,
+  PeriodParameters,
+  UpdatePeriodRequest,
+} from '../../api/types'
 import { addDaysIso, oneYearPeriodEnd, shiftYears } from '../../lib/dates'
 import { formatMinutes, parseDuration } from '../../lib/time'
 
@@ -187,7 +193,7 @@ export const periodSchema = z
     }
   })
 
-function toBody(values: PeriodFormValues): Omit<PeriodDto, 'id' | 'version'> {
+function toBody(values: PeriodFormValues): PeriodParameters {
   return {
     name: values.name.trim(),
     startDate: values.startDate,

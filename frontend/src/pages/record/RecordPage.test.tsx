@@ -1,8 +1,11 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
+import type { PeriodDto } from '../../api/types'
+import { referenceMonth } from '../../hooks/usePeriods'
+import { capitalize, formatMonthLong } from '../../lib/dates'
 import { authResponse, octoberSummary, period } from '../../test/fixtures'
-import { json, mockApi, problem } from '../../test/fetchMock'
+import { json, mockApi, noContent, problem } from '../../test/fetchMock'
 import { renderApp } from '../../test/renderApp'
 
 const MONTH_URL = 'GET /api/summary/month'
@@ -25,7 +28,7 @@ describe('Registro mensual', () => {
     renderApp('/registro/2026-10')
 
     expect(await screen.findByRole('heading', { name: 'Registro' })).toBeInTheDocument()
-    expect(screen.getByText('Octubre de 2026')).toBeInTheDocument()
+    expect(screen.getByText('Octubre de 2026 · periodo 2026-2027')).toBeInTheDocument()
 
     const table = await screen.findByRole('table', { name: 'Registro diario del mes por semanas' })
     const subtotals = within(table).getAllByRole('row', { name: /Subtotal de la semana/ })
@@ -56,12 +59,15 @@ describe('Registro mensual', () => {
     const close = screen.getByRole('region', { name: 'Cierre del mes' })
     expect(within(close).getByText('160:00')).toBeInTheDocument()
     expect(within(close).getAllByText('33:04').length).toBeGreaterThan(0)
-    expect(within(close).getByText('Faltan')).toBeInTheDocument()
-    expect(within(close).getByText('-126:56')).toHaveClass('text-red-600')
-    expect(within(close).getByText('+8:50')).toBeInTheDocument()
+    // Tabla de horas: mes completo y hasta hoy, con la diferencia con signo y color.
+    const difference = within(close).getByRole('row', { name: /Diferencia/ })
+    expect(within(difference).getAllByText('-126:56')[0]).toHaveClass('text-red-600')
+    expect(within(close).getAllByText('+8:50').length).toBeGreaterThan(0)
+    // Saldo como una cuenta: apertura + diferencia − puentes = cierre.
+    expect(within(close).getByText('= Saldo de cierre').nextElementSibling).toHaveTextContent('-118:06')
     expect(within(close).getByText('-118:06')).toHaveClass('text-red-600')
     expect(within(close).getByText('33,3 %')).toBeInTheDocument()
-    expect(within(close).getByText('Días en casa').nextElementSibling).toHaveTextContent('2')
+    expect(close).toHaveTextContent('2 días en casa o mixto')
   })
 
   it('despliega los avisos de un día', async () => {
@@ -71,6 +77,45 @@ describe('Registro mensual', () => {
     fireEvent.click(await screen.findByRole('button', { name: '1 aviso del jue 1' }))
 
     expect(screen.getByText('⚠ La comida dura 20 min: se descuenta el mínimo de 30 min')).toBeInTheDocument()
+  })
+
+  it('un día mixto se ve y se edita en dos líneas: oficina y casa', async () => {
+    const saved = vi.fn()
+    mockApi(
+      routes({
+        'PUT /api/workdays/2026-10-06': (req: { body: unknown }) => {
+          saved(req.body)
+          return json({ date: '2026-10-06', version: 1 })
+        },
+      }),
+    )
+    renderApp('/registro/2026-10')
+
+    const officeStart = await screen.findByLabelText('Entrada en la oficina del mar 6')
+    expect(officeStart).toHaveValue('08:00')
+    expect(screen.getByLabelText('Salida de la oficina del mar 6')).toHaveValue('12:00')
+    expect(screen.getByLabelText('Entrada en casa del mar 6')).toHaveValue('12:00')
+    expect(screen.getByLabelText('Salida de casa del mar 6')).toHaveValue('16:30')
+    const row = officeStart.closest('tr') as HTMLElement
+    expect(row).toHaveTextContent('oficina 4:00 · casa 4:00')
+
+    // Salir de la oficina a las 11:30: la media hora hasta empezar en casa no cuenta.
+    fireEvent.change(screen.getByLabelText('Salida de la oficina del mar 6'), { target: { value: '11:30' } })
+    expect(row).toHaveTextContent('oficina 3:30 · casa 4:00')
+    fireEvent.keyDown(screen.getByLabelText('Salida de la oficina del mar 6'), { key: 'Enter' })
+
+    await waitFor(() => expect(saved).toHaveBeenCalledTimes(1))
+    expect(saved).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        startTime: '08:00',
+        endTime: '16:30',
+        location: 'MIXTO',
+        officeStart: '08:00',
+        officeEnd: '11:30',
+        homeStart: '12:00',
+        homeEnd: '16:30',
+      }),
+    )
   })
 
   it('guarda la fila al salir de ella con PUT y version', async () => {
@@ -102,7 +147,10 @@ describe('Registro mensual', () => {
       endTime: '15:30',
       breaks: [],
       location: 'OFICINA',
-      remoteMinutes: null,
+      officeStart: null,
+      officeEnd: null,
+      homeStart: null,
+      homeEnd: null,
       notes: null,
       version: null,
     })
@@ -177,7 +225,7 @@ describe('Registro mensual', () => {
     renderApp('/registro/2026-10')
 
     const week = await screen.findByRole('region', { name: 'Semana del 1 oct al 4 oct' })
-    expect(screen.queryByRole('table')).not.toBeInTheDocument()
+    expect(screen.queryByRole('table', { name: 'Registro diario del mes por semanas' })).not.toBeInTheDocument()
     const firstDay = within(week).getByRole('button', { name: /Jue 1/ })
     expect(firstDay).toHaveTextContent('07:25 – 17:59')
     expect(firstDay).toHaveTextContent('10:04')
@@ -186,18 +234,53 @@ describe('Registro mensual', () => {
     expect(screen.getByRole('navigation', { name: 'Principal' })).toHaveClass('fixed')
   })
 
-  it('avisa si ningún periodo incluye el mes', async () => {
+  it('un mes fuera del periodo seleccionado lleva a su primer mes, y no se puede salir del periodo', async () => {
     mockApi(routes())
     renderApp('/registro/2025-01')
 
-    expect(await screen.findByText('Ningún periodo incluye este mes')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Mes siguiente' })).toHaveAttribute('href', '/registro/2025-02')
+    expect(await screen.findByText('Mayo de 2026 · periodo 2026-2027')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Mes anterior' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Mes siguiente' })).toHaveAttribute('href', '/registro/2026-06')
   })
 
-  it('una ruta sin mes válido redirige al mes actual', async () => {
+  it('sin mes abre el mes de referencia del periodo seleccionado', async () => {
     mockApi(routes())
     renderApp('/registro/otra-cosa')
 
-    expect(await screen.findByRole('heading', { name: 'Registro' })).toBeInTheDocument()
+    const expected = capitalize(formatMonthLong(referenceMonth(period)))
+    expect(await screen.findByText(`${expected} · periodo 2026-2027`)).toBeInTheDocument()
+  })
+
+  it('el selector de periodo cambia el periodo de todas las pantallas', async () => {
+    const next: PeriodDto = {
+      ...period,
+      id: '7c1e2d3f-4a5b-4c6d-8e9f-0a1b2c3d4e5f',
+      name: '2027-2028',
+      startDate: '2027-05-26',
+      endDate: '2028-05-25',
+      selected: false,
+    }
+    let selectedId = period.id
+    const { callsTo } = mockApi(
+      routes({
+        'GET /api/periods': () => json([next, period].map((p) => ({ ...p, selected: p.id === selectedId }))),
+        [`PUT /api/periods/${next.id}/select`]: () => {
+          selectedId = next.id
+          return noContent()
+        },
+      }),
+    )
+    renderApp('/registro/2026-10')
+    expect(await screen.findByText('Octubre de 2026 · periodo 2026-2027')).toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText('Periodo'), { target: { value: next.id } })
+
+    // Octubre de 2026 queda fuera del 2027-2028: pasa a su primer mes.
+    expect(await screen.findByText('Mayo de 2027 · periodo 2027-2028')).toBeInTheDocument()
+    expect(callsTo('PUT', `/api/periods/${next.id}/select`)).toHaveLength(1)
+    await waitFor(() => {
+      const months = callsTo('GET', '/api/summary/month')
+      expect(months.some((c) => c.url.searchParams.get('periodId') === next.id)).toBe(true)
+    })
   })
 })

@@ -66,7 +66,7 @@ describe('Importar el Excel', () => {
     expect(rows[0]).toHaveTextContent('Mayo 26 · fila 9')
     expect(rows[0]).toHaveTextContent('Nuevo')
     expect(rows[0]).toHaveTextContent('Se importa')
-    expect(rows[0]).toHaveTextContent('07:25–17:59')
+    expect(rows[0]).toHaveTextContent('07:25 – 17:59')
     expect(rows[0]).toHaveTextContent('10:04')
     expect(rows[1]).toHaveTextContent('Futuro')
     expect(rows[1]).toHaveTextContent('Se omite')

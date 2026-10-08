@@ -62,6 +62,10 @@ public class WorkPeriod {
     @Column(name = "opening_balance_min", nullable = false)
     private int openingBalanceMin;
 
+    /** Solo se cambia con {@link WorkPeriodRepository#clearSelected} / {@code markSelected} (sin tocar la versión). */
+    @Column(name = "selected", nullable = false, insertable = false, updatable = false)
+    private boolean selected;
+
     @Version
     private Long version;
 
@@ -99,6 +103,7 @@ public class WorkPeriod {
     public void setMaxRemotePct(int maxRemotePct) { this.maxRemotePct = maxRemotePct; }
     public int getOpeningBalanceMin() { return openingBalanceMin; }
     public void setOpeningBalanceMin(int openingBalanceMin) { this.openingBalanceMin = openingBalanceMin; }
+    public boolean isSelected() { return selected; }
     public Long getVersion() { return version; }
     public void setVersion(Long version) { this.version = version; }
     public Instant getCreatedAt() { return createdAt; }

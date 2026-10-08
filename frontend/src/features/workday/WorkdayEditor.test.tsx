@@ -103,7 +103,10 @@ describe('Editor de día', () => {
       endTime: '16:00',
       breaks: [{ type: 'COMIDA', startTime: '13:00', endTime: '13:30' }],
       location: 'CASA',
-      remoteMinutes: null,
+      officeStart: null,
+      officeEnd: null,
+      homeStart: null,
+      homeEnd: null,
       notes: 'Reunión con cliente',
       version: null,
     })
@@ -115,23 +118,46 @@ describe('Editor de día', () => {
 
     setTime('Entrada', '17:00')
     setTime('Salida', '08:00')
-    fireEvent.click(screen.getByRole('radio', { name: 'Mixto' }))
-    fireEvent.change(screen.getByLabelText('Tiempo en casa (h:mm)'), { target: { value: '7,5' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Guardar' }))
-
-    expect(await screen.findByText('Duración no válida (h:mm)')).toBeInTheDocument()
-    expect(callsTo('PUT', `/api/workdays/${DATE}`)).toHaveLength(0)
-
-    fireEvent.change(screen.getByLabelText('Tiempo en casa (h:mm)'), { target: { value: '' } })
     fireEvent.click(screen.getByRole('button', { name: 'Guardar' }))
     expect(await screen.findByText('La salida debe ser posterior a la entrada')).toBeInTheDocument()
     expect(callsTo('PUT', `/api/workdays/${DATE}`)).toHaveLength(0)
 
-    setTime('Entrada', '08:00')
-    setTime('Salida', '16:00')
+    // Al pasar a Mixto, la entrada se propone como entrada en la oficina y la salida como salida de casa.
+    fireEvent.click(screen.getByRole('radio', { name: 'Mixto' }))
+    expect(screen.getByLabelText('Entrada en la oficina')).toHaveValue('17:00')
+    expect(screen.getByLabelText('Salida de casa')).toHaveValue('08:00')
+    setTime('Entrada en la oficina', '08:00')
+    setTime('Salida de la oficina', '13:00')
+    setTime('Entrada en casa', '12:00')
+    setTime('Salida de casa', '16:00')
     fireEvent.click(screen.getByRole('button', { name: 'Guardar' }))
-    expect(await screen.findByText('Indica cuántos minutos has trabajado en casa')).toBeInTheDocument()
+    expect(await screen.findByText('Los tramos de oficina y de casa no pueden solaparse')).toBeInTheDocument()
     expect(callsTo('PUT', `/api/workdays/${DATE}`)).toHaveLength(0)
+  })
+
+  it('un día mixto se guarda con sus dos tramos y el hueco no cuenta', async () => {
+    const { callsTo } = mockApi({ ...baseRoutes(), [`PUT /api/workdays/${DATE}`]: (req) => json(req.body) })
+    await openEditor()
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Mixto' }))
+    setTime('Entrada en la oficina', '08:00')
+    setTime('Salida de la oficina', '13:00')
+    setTime('Entrada en casa', '14:00')
+    setTime('Salida de casa', '17:00')
+    // 5 h en la oficina + 3 h en casa; la hora de 13:00 a 14:00 no cuenta.
+    expect(liveTotal()).toHaveTextContent('8:00')
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar' }))
+
+    await waitFor(() => expect(callsTo('PUT', `/api/workdays/${DATE}`)).toHaveLength(1))
+    expect(callsTo('PUT', `/api/workdays/${DATE}`)[0].body).toMatchObject({
+      startTime: '08:00',
+      endTime: '17:00',
+      location: 'MIXTO',
+      officeStart: '08:00',
+      officeEnd: '13:00',
+      homeStart: '14:00',
+      homeEnd: '17:00',
+    })
   })
 
   it('edita un día existente enviando su versión y cierra al guardar', async () => {
@@ -205,11 +231,35 @@ describe('Editor de día', () => {
     expect(onClose).toHaveBeenCalled()
   })
 
-  it('fuera de cualquier periodo no deja guardar', async () => {
+  it('sin periodos no deja guardar', async () => {
     mockApi({ ...baseRoutes(), 'GET /api/periods': [] })
     await openEditor()
 
-    expect(screen.getByText('Fecha fuera de cualquier periodo')).toBeInTheDocument()
+    expect(screen.getByText('Aún no tienes ningún periodo')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Guardar' })).toBeDisabled()
+  })
+
+  it('un día fuera del periodo seleccionado no se lee ni se guarda', async () => {
+    const { calls } = mockApi({
+      ...baseRoutes(),
+      'GET /api/periods': [{ ...period, name: '2027-2028', startDate: '2027-05-26', endDate: '2028-05-25' }],
+    })
+    await openEditor()
+
+    expect(screen.getByText('Este día no está en el periodo 2027-2028')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Guardar' })).toBeDisabled()
+    expect(calls.some((c) => c.path.startsWith('/api/workdays'))).toBe(false)
+  })
+
+  it('lee y guarda el día en el periodo seleccionado', async () => {
+    const { callsTo } = mockApi({ ...baseRoutes(), [`PUT /api/workdays/${DATE}`]: (req) => json(req.body) })
+    await openEditor()
+
+    expect(callsTo('GET', `/api/workdays/${DATE}`)[0].url.searchParams.get('periodId')).toBe(period.id)
+    setTime('Entrada', '08:00')
+    setTime('Salida', '16:00')
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar' }))
+    await waitFor(() => expect(callsTo('PUT', `/api/workdays/${DATE}`)).toHaveLength(1))
+    expect(callsTo('PUT', `/api/workdays/${DATE}`)[0].url.searchParams.get('periodId')).toBe(period.id)
   })
 })

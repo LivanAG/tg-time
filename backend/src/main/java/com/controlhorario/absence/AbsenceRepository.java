@@ -9,7 +9,12 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface AbsenceRepository extends JpaRepository<Absence, UUID> {
 
-    Optional<Absence> findByUserIdAndDate(UUID userId, LocalDate date);
+    Optional<Absence> findByPeriodIdAndDate(UUID periodId, LocalDate date);
 
-    List<Absence> findByUserIdAndDateBetweenOrderByDate(UUID userId, LocalDate from, LocalDate to);
+    List<Absence> findByPeriodIdAndDateBetweenOrderByDate(UUID periodId, LocalDate from, LocalDate to);
+
+    /** Para no dejar ausencias fuera de las fechas al acortar un periodo. */
+    boolean existsByPeriodIdAndDateBefore(UUID periodId, LocalDate date);
+
+    boolean existsByPeriodIdAndDateAfter(UUID periodId, LocalDate date);
 }

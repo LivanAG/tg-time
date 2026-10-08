@@ -6,6 +6,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 
 public interface WorkPeriodRepository extends JpaRepository<WorkPeriod, UUID> {
@@ -14,14 +15,15 @@ public interface WorkPeriodRepository extends JpaRepository<WorkPeriod, UUID> {
 
     Optional<WorkPeriod> findByIdAndUserId(UUID id, UUID userId);
 
-    @Query("select p from WorkPeriod p where p.userId = :userId and p.startDate <= :date and p.endDate >= :date")
-    Optional<WorkPeriod> findContaining(UUID userId, LocalDate date);
+    // Dos sentencias (primero desmarcar, luego marcar): el índice único parcial se comprueba fila a fila.
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("update WorkPeriod p set p.selected = false where p.userId = :userId and p.selected = true")
+    void clearSelected(UUID userId);
 
-    @Query("""
-            select count(p) > 0 from WorkPeriod p
-            where p.userId = :userId and p.startDate <= :end and p.endDate >= :start
-              and (:excludeId is null or p.id <> :excludeId)""")
-    boolean existsOverlapping(UUID userId, LocalDate start, LocalDate end, UUID excludeId);
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("update WorkPeriod p set p.selected = true where p.userId = :userId and p.id = :periodId")
+    void markSelected(UUID userId, UUID periodId);
+
 
     /** Periodos del usuario que tocan el rango [from, to], por fecha de inicio. */
     @Query("""

@@ -21,6 +21,7 @@ import com.controlhorario.TestcontainersConfiguration;
 import com.controlhorario.user.User;
 import com.controlhorario.user.UserRepository;
 import com.controlhorario.workday.calc.BreakInput;
+import com.controlhorario.workday.calc.MixedTimes;
 import com.controlhorario.workday.calc.WorkdayInput;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -147,7 +148,11 @@ public abstract class DomainApiTestSupport {
         }
         body.put("breaks", breaks);
         body.put("location", input.location().name());
-        body.put("remoteMinutes", input.remoteMinutes());
+        MixedTimes mixed = input.mixed();
+        body.put("officeStart", mixed == null ? null : mixed.officeStart().format(HH_MM));
+        body.put("officeEnd", mixed == null ? null : mixed.officeEnd().format(HH_MM));
+        body.put("homeStart", mixed == null ? null : mixed.homeStart().format(HH_MM));
+        body.put("homeEnd", mixed == null ? null : mixed.homeEnd().format(HH_MM));
         body.put("notes", null);
         body.put("version", version);
         return body;
@@ -162,7 +167,6 @@ public abstract class DomainApiTestSupport {
                 Map.of("type", "DESAYUNO", "startTime", "12:43", "endTime", "13:02"),
                 Map.of("type", "COMIDA", "startTime", "15:02", "endTime", "15:32")));
         body.put("location", "OFICINA");
-        body.put("remoteMinutes", null);
         body.put("notes", null);
         body.put("version", null);
         return body;

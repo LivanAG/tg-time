@@ -15,7 +15,7 @@ import type {
   WorkLocation,
   WorkdayDto,
 } from '../api/types'
-import { calculateWorkday } from '../lib/workdayCalc'
+import { calculateWorkday, type CalcMixed } from '../lib/workdayCalc'
 
 export const TODAY = '2026-10-07'
 
@@ -47,6 +47,7 @@ export const period: PeriodDto = {
   maxRemotePct: 50,
   openingBalanceMin: 0,
   intensiveRanges: [{ startDate: '2026-06-15', endDate: '2026-09-15' }],
+  selected: true,
   version: 0,
 }
 
@@ -57,13 +58,11 @@ export function workday(
   startTime: string,
   endTime: string,
   breaks: BreakDto[] = [],
-  extra: Partial<
-    Pick<WorkdayDto, 'location' | 'remoteMinutes' | 'notes' | 'version'>
-  > = {},
+  extra: Partial<Pick<WorkdayDto, 'location' | 'notes' | 'version'>> & { mixed?: CalcMixed } = {},
 ): WorkdayDto {
   const location: WorkLocation = extra.location ?? 'OFICINA'
-  const remoteMinutes = location === 'MIXTO' ? (extra.remoteMinutes ?? null) : null
-  const result = calculateWorkday({ startTime, endTime, breaks, location, remoteMinutes }, RULES)
+  const mixed = location === 'MIXTO' ? (extra.mixed ?? null) : null
+  const result = calculateWorkday({ startTime, endTime, breaks, location, mixed }, RULES)
   const { warnings, ...totals } = result
   return {
     date,
@@ -71,7 +70,10 @@ export function workday(
     endTime,
     breaks,
     location,
-    remoteMinutes,
+    officeStart: mixed?.officeStart ?? null,
+    officeEnd: mixed?.officeEnd ?? null,
+    homeStart: mixed?.homeStart ?? null,
+    homeEnd: mixed?.homeEnd ?? null,
     notes: extra.notes ?? null,
     version: extra.version ?? 0,
     totals,
@@ -146,7 +148,8 @@ const octoberWorkdays: Record<string, WorkdayDto> = {
   }),
   '2026-10-06': workday('2026-10-06', '08:00', '16:30', [{ type: 'COMIDA', startTime: '13:00', endTime: '13:30' }], {
     location: 'MIXTO',
-    remoteMinutes: 240,
+    // Oficina 08:00-12:00 y casa 12:00-16:30 con la comida: 240 en cada sitio.
+    mixed: { officeStart: '08:00', officeEnd: '12:00', homeStart: '12:00', homeEnd: '16:30' },
     version: 0,
   }),
 }
@@ -269,7 +272,10 @@ export function importPreview(overrides: Partial<ImportResultDto> = {}): ImportR
             { type: 'COMIDA', startTime: '15:02', endTime: '15:32' },
           ],
           location: 'OFICINA',
-          remoteMinutes: null,
+          officeStart: null,
+          officeEnd: null,
+          homeStart: null,
+          homeEnd: null,
           notes: null,
         },
         excelWorkedMinutes: 604,
@@ -287,7 +293,10 @@ export function importPreview(overrides: Partial<ImportResultDto> = {}): ImportR
           endTime: '16:00',
           breaks: [],
           location: 'OFICINA',
-          remoteMinutes: null,
+          officeStart: null,
+          officeEnd: null,
+          homeStart: null,
+          homeEnd: null,
           notes: null,
         },
         excelWorkedMinutes: 480,

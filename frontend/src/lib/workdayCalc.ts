@@ -2,22 +2,23 @@
 // misma fórmula, mismas validaciones, mismos códigos y mismos mensajes. Sirve para el total en vivo
 // del editor y para validar antes de enviar; el backend vuelve a calcular y es quien manda.
 //
-//   trabajado = (salida - entrada) - max(0, desayuno - tolerancia) - max(comida, comidaMínima) - otrasPausas
+//   trabajado = bruto - max(0, desayuno - tolerancia) - max(comida, comidaMínima) - otrasPausas
 //
-// La comida mínima solo se aplica si hubo pausa COMIDA. Ubicación: OFICINA todo oficina, CASA todo
-// casa, MIXTO los minutos en casa indicados y el resto oficina.
+// El bruto es la suma de los tramos trabajados: entrada-salida o, en MIXTO, el tramo de oficina más
+// el de casa (el hueco entre ellos no cuenta). La comida mínima solo se aplica si hubo pausa COMIDA.
+// Ubicación: OFICINA todo oficina, CASA todo casa, MIXTO lo trabajado en el tramo de casa (su duración
+// menos lo que se descuenta de las pausas que caen en él) y el resto oficina.
 
 import type { BreakType, WorkLocation } from '../api/types'
 import { parseTime } from './time'
 
 export const END_BEFORE_START = 'END_BEFORE_START'
+export const SEGMENTS_OVERLAP = 'SEGMENTS_OVERLAP'
 export const BREAK_INVALID = 'BREAK_INVALID'
 export const BREAK_OUTSIDE_WORKDAY = 'BREAK_OUTSIDE_WORKDAY'
 export const BREAKS_OVERLAP = 'BREAKS_OVERLAP'
 export const DUPLICATE_BREAKFAST = 'DUPLICATE_BREAKFAST'
 export const DUPLICATE_LUNCH = 'DUPLICATE_LUNCH'
-export const REMOTE_MINUTES_REQUIRED = 'REMOTE_MINUTES_REQUIRED'
-export const REMOTE_MINUTES_EXCEED_WORKED = 'REMOTE_MINUTES_EXCEED_WORKED'
 export const LUNCH_BELOW_MINIMUM = 'LUNCH_BELOW_MINIMUM'
 
 /** Error o aviso del cálculo (CalcIssue del backend). */
@@ -40,13 +41,23 @@ export interface CalcBreak {
   endTime: string | null
 }
 
+/** Tramos de un día MIXTO ("HH:mm"): oficina y casa, en cualquier orden. */
+export interface CalcMixed {
+  officeStart: string | null
+  officeEnd: string | null
+  homeStart: string | null
+  homeEnd: string | null
+}
+
 /** Fichaje de un día tal como lo introduce el usuario (horas "HH:mm"). */
 export interface CalcWorkday {
+  /** En MIXTO no se usan: la entrada y la salida salen de los tramos. */
   startTime: string | null
   endTime: string | null
   breaks: CalcBreak[]
   location: WorkLocation | null
-  remoteMinutes: number | null
+  /** Solo con MIXTO. */
+  mixed: CalcMixed | null
 }
 
 export interface WorkdayResult {
@@ -68,12 +79,25 @@ interface ParsedBreak {
   end: number | null
 }
 
+interface Segment {
+  location: WorkLocation
+  start: number
+  end: number
+}
+
+interface ParsedMixed {
+  officeStart: number | null
+  officeEnd: number | null
+  homeStart: number | null
+  homeEnd: number | null
+}
+
 interface ParsedWorkday {
   start: number | null
   end: number | null
   breaks: ParsedBreak[]
   location: WorkLocation
-  remoteMinutes: number | null
+  mixed: ParsedMixed
 }
 
 function parse(input: CalcWorkday): ParsedWorkday {
@@ -82,22 +106,91 @@ function parse(input: CalcWorkday): ParsedWorkday {
     end: parseTime(input.endTime),
     breaks: input.breaks.map((b) => ({ type: b.type, start: parseTime(b.startTime), end: parseTime(b.endTime) })),
     location: input.location ?? 'OFICINA',
-    remoteMinutes: input.remoteMinutes,
+    mixed: {
+      officeStart: parseTime(input.mixed?.officeStart ?? null),
+      officeEnd: parseTime(input.mixed?.officeEnd ?? null),
+      homeStart: parseTime(input.mixed?.homeStart ?? null),
+      homeEnd: parseTime(input.mixed?.homeEnd ?? null),
+    },
   }
 }
 
-/** Errores que impiden guardar el día. Lista vacía si es válido. */
-export function validateWorkday(input: CalcWorkday, rules: CalcRules): CalcIssue[] {
-  const day = parse(input)
-  const errors: CalcIssue[] = []
+/** Primera entrada y última salida de un día MIXTO ("HH:mm"); null si falta alguna hora. */
+export function mixedBounds(mixed: CalcMixed | null): { startTime: string; endTime: string } | null {
+  if (!mixed?.officeStart || !mixed.officeEnd || !mixed.homeStart || !mixed.homeEnd) {
+    return null
+  }
+  // "HH:mm" se ordena igual como texto que como hora.
+  return {
+    startTime: mixed.officeStart < mixed.homeStart ? mixed.officeStart : mixed.homeStart,
+    endTime: mixed.officeEnd > mixed.homeEnd ? mixed.officeEnd : mixed.homeEnd,
+  }
+}
+
+function validateStartEnd(day: ParsedWorkday): CalcIssue[] {
   if (day.start === null || day.end === null) {
-    errors.push({ code: END_BEFORE_START, field: 'startTime', message: 'La entrada y la salida son obligatorias' })
-    return errors
+    return [{ code: END_BEFORE_START, field: 'startTime', message: 'La entrada y la salida son obligatorias' }]
   }
   if (!(day.end > day.start)) {
-    errors.push({ code: END_BEFORE_START, field: 'endTime', message: 'La salida debe ser posterior a la entrada' })
+    return [{ code: END_BEFORE_START, field: 'endTime', message: 'La salida debe ser posterior a la entrada' }]
+  }
+  return []
+}
+
+function validateMixed(m: ParsedMixed): CalcIssue[] {
+  const errors: CalcIssue[] = []
+  if (m.officeStart === null || m.officeEnd === null) {
+    errors.push({ code: END_BEFORE_START, field: 'officeStart', message: 'Indica la entrada y la salida en la oficina' })
+  } else if (!(m.officeEnd > m.officeStart)) {
+    errors.push({
+      code: END_BEFORE_START,
+      field: 'officeEnd',
+      message: 'La salida de la oficina debe ser posterior a la entrada',
+    })
+  }
+  if (m.homeStart === null || m.homeEnd === null) {
+    errors.push({ code: END_BEFORE_START, field: 'homeStart', message: 'Indica la entrada y la salida en casa' })
+  } else if (!(m.homeEnd > m.homeStart)) {
+    errors.push({ code: END_BEFORE_START, field: 'homeEnd', message: 'La salida de casa debe ser posterior a la entrada' })
+  }
+  if (
+    errors.length === 0 &&
+    (m.officeStart as number) < (m.homeEnd as number) &&
+    (m.homeStart as number) < (m.officeEnd as number)
+  ) {
+    errors.push({
+      code: SEGMENTS_OVERLAP,
+      field: 'homeStart',
+      message: 'Los tramos de oficina y de casa no pueden solaparse',
+    })
+  }
+  return errors
+}
+
+/** Tramos trabajados: entrada-salida o, en MIXTO, oficina y casa. Supone horas válidas. */
+function segments(day: ParsedWorkday): Segment[] {
+  if (day.location === 'MIXTO') {
+    const m = day.mixed
+    return [
+      { location: 'OFICINA', start: m.officeStart as number, end: m.officeEnd as number },
+      { location: 'CASA', start: m.homeStart as number, end: m.homeEnd as number },
+    ]
+  }
+  return [{ location: day.location, start: day.start as number, end: day.end as number }]
+}
+
+function contains(segment: Segment, b: ParsedBreak): boolean {
+  return (b.start as number) >= segment.start && (b.end as number) <= segment.end
+}
+
+/** Errores que impiden guardar el día. Lista vacía si es válido. */
+export function validateWorkday(input: CalcWorkday, _rules: CalcRules): CalcIssue[] {
+  const day = parse(input)
+  const errors = day.location === 'MIXTO' ? validateMixed(day.mixed) : validateStartEnd(day)
+  if (errors.length > 0) {
     return errors
   }
+  const daySegments = segments(day)
   let breakfasts = 0
   let lunches = 0
   day.breaks.forEach((b, i) => {
@@ -106,8 +199,15 @@ export function validateWorkday(input: CalcWorkday, rules: CalcRules): CalcIssue
       errors.push({ code: BREAK_INVALID, field, message: 'La pausa necesita tipo y un fin posterior al inicio' })
       return
     }
-    if (b.start < (day.start as number) || b.end > (day.end as number)) {
-      errors.push({ code: BREAK_OUTSIDE_WORKDAY, field, message: 'La pausa debe estar dentro de la jornada' })
+    if (!daySegments.some((s) => contains(s, b))) {
+      errors.push({
+        code: BREAK_OUTSIDE_WORKDAY,
+        field,
+        message:
+          day.location === 'MIXTO'
+            ? 'La pausa debe estar dentro del tramo de oficina o del de casa'
+            : 'La pausa debe estar dentro de la jornada',
+      })
     }
     if (b.type === 'DESAYUNO' && ++breakfasts > 1) {
       errors.push({ code: DUPLICATE_BREAKFAST, field, message: 'Solo puede haber un desayuno' })
@@ -131,31 +231,14 @@ export function validateWorkday(input: CalcWorkday, rules: CalcRules): CalcIssue
       errors.push({ code: BREAKS_OVERLAP, field: `breaks[${ordered[k]}]`, message: 'Las pausas no pueden solaparse' })
     }
   }
-  if (day.location === 'MIXTO') {
-    if (day.remoteMinutes === null) {
-      errors.push({
-        code: REMOTE_MINUTES_REQUIRED,
-        field: 'remoteMinutes',
-        message: 'Indica cuántos minutos has trabajado en casa',
-      })
-    } else if (errors.length === 0 && day.remoteMinutes > calculateParsed(day, rules).workedMinutes) {
-      errors.push({
-        code: REMOTE_MINUTES_EXCEED_WORKED,
-        field: 'remoteMinutes',
-        message: 'Los minutos en casa no pueden superar el tiempo trabajado',
-      })
-    }
-  }
   return errors
 }
 
 /** Totales del día. Supone una entrada válida (ver validateWorkday). */
 export function calculateWorkday(input: CalcWorkday, rules: CalcRules): WorkdayResult {
-  return calculateParsed(parse(input), rules)
-}
-
-function calculateParsed(day: ParsedWorkday, rules: CalcRules): WorkdayResult {
-  const gross = (day.end as number) - (day.start as number)
+  const day = parse(input)
+  const daySegments = segments(day)
+  const gross = daySegments.reduce((sum, s) => sum + (s.end - s.start), 0)
   let breakfast = 0
   let lunch = 0
   let hasLunch = false
@@ -195,9 +278,25 @@ function calculateParsed(day: ParsedWorkday, rules: CalcRules): WorkdayResult {
     case 'CASA':
       remote = worked
       break
-    case 'MIXTO':
-      remote = Math.min(worked, Math.max(0, day.remoteMinutes ?? 0))
+    case 'MIXTO': {
+      // Lo trabajado en casa: el tramo menos lo que se descuenta de las pausas que caen en él
+      // (solo hay un desayuno y una comida, así que su descuento va entero a su tramo).
+      const home = daySegments[1]
+      let homeWorked = home.end - home.start
+      for (const b of day.breaks) {
+        if (contains(home, b)) {
+          if (b.type === 'DESAYUNO') {
+            homeWorked -= breakfastDeducted
+          } else if (b.type === 'COMIDA') {
+            homeWorked -= lunchDeducted
+          } else {
+            homeWorked -= (b.end as number) - (b.start as number)
+          }
+        }
+      }
+      remote = Math.min(worked, Math.max(0, homeWorked))
       break
+    }
     default:
       remote = 0
   }
@@ -217,16 +316,12 @@ function calculateParsed(day: ParsedWorkday, rules: CalcRules): WorkdayResult {
 
 export interface LiveCalculation {
   errors: CalcIssue[]
-  /** null si los datos aún no permiten calcular (faltan horas o hay pausas no válidas). */
+  /** null si los datos aún no permiten calcular (faltan horas, tramos o hay pausas no válidas). */
   result: WorkdayResult | null
 }
 
-/**
- * Validación + cálculo para el editor: calcula en cuanto las horas y las pausas son válidas, aunque
- * aún falten los minutos en casa del modo MIXTO.
- */
+/** Validación + cálculo para el editor: calcula en cuanto el día es válido. */
 export function liveCalculation(input: CalcWorkday, rules: CalcRules): LiveCalculation {
   const errors = validateWorkday(input, rules)
-  const calculable = errors.every((e) => e.field === 'remoteMinutes')
-  return { errors, result: calculable ? calculateWorkday(input, rules) : null }
+  return { errors, result: errors.length === 0 ? calculateWorkday(input, rules) : null }
 }

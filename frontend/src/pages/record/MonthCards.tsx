@@ -3,7 +3,7 @@ import { Duration } from '../../components/Duration'
 import { capitalize, formatDayMonth, formatDayShort, todayIso } from '../../lib/dates'
 import { LOCATION_LABELS } from '../../lib/format'
 import { formatMinutes } from '../../lib/time'
-import { breaksSummary, dayLabel, dayTone, groupByWeek } from './dayInfo'
+import { breaksSummary, dayLabel, dayTone, groupByWeek, timesSummary } from './dayInfo'
 
 /** Vista móvil del registro: una tarjeta por día, agrupadas por semana. Tocar un día abre el editor. */
 export function MonthCards({ summary, onOpenDay }: { summary: MonthSummaryDto; onOpenDay: (date: string) => void }) {
@@ -54,7 +54,7 @@ function DayCard({ day, isToday, onOpenDay }: { day: DayDto; isToday: boolean; o
           </p>
           {workday ? (
             <p className="text-base tabular-nums text-slate-900">
-              {workday.startTime} – {workday.endTime}
+              {timesSummary(workday)}
             </p>
           ) : (
             <p className="text-sm text-slate-500">{label ?? 'Sin fichaje'}</p>

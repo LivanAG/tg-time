@@ -1,18 +1,23 @@
 package com.controlhorario.period;
 
 import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import com.controlhorario.absence.AbsenceRepository;
 import com.controlhorario.calendar.HolidayPreloader;
 import com.controlhorario.calendar.HolidayRepository;
 import com.controlhorario.common.audit.AuditService;
+import com.controlhorario.common.time.UserClock;
 import com.controlhorario.common.web.ConflictException;
 import com.controlhorario.common.web.NotFoundException;
 import com.controlhorario.common.web.ValidationException;
+import com.controlhorario.workday.WorkdayRepository;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,6 +25,12 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * Periodos anuales del usuario y sus rangos de intensiva. Todas las operaciones filtran por el
  * usuario del token: un periodo ajeno o inexistente es siempre 404.
+ * <p>
+ * Cada periodo tiene sus propios fichajes y ausencias, así que los periodos pueden solaparse (p. ej.
+ * uno de pruebas junto al real); borrar un periodo borra también sus registros.
+ * <p>
+ * Periodo seleccionado (con el que trabajan todas las pantallas): el marcado por el usuario; si no
+ * hay ninguno, el que contiene hoy; si tampoco, el más reciente. Crear un periodo lo selecciona.
  */
 @Service
 public class PeriodService {
@@ -29,21 +40,30 @@ public class PeriodService {
     /** Duración máxima de un periodo (un periodo "anual" con holgura de sobra). */
     static final int MAX_PERIOD_YEARS = 2;
 
+    private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+
     private final WorkPeriodRepository periods;
     private final IntensiveRangeRepository ranges;
     private final HolidayRepository holidays;
     private final HolidayPreloader holidayPreloader;
     private final PeriodMapper mapper;
     private final AuditService audit;
+    private final UserClock userClock;
+    private final WorkdayRepository workdays;
+    private final AbsenceRepository absences;
 
     public PeriodService(WorkPeriodRepository periods, IntensiveRangeRepository ranges, HolidayRepository holidays,
-            HolidayPreloader holidayPreloader, PeriodMapper mapper, AuditService audit) {
+            HolidayPreloader holidayPreloader, PeriodMapper mapper, AuditService audit, UserClock userClock,
+            WorkdayRepository workdays, AbsenceRepository absences) {
         this.periods = periods;
         this.ranges = ranges;
         this.holidays = holidays;
         this.holidayPreloader = holidayPreloader;
         this.mapper = mapper;
         this.audit = audit;
+        this.userClock = userClock;
+        this.workdays = workdays;
+        this.absences = absences;
     }
 
     /** Periodo del usuario o 404 (también si es de otro usuario). */
@@ -59,13 +79,56 @@ public class PeriodService {
         if (all.isEmpty()) {
             return List.of();
         }
+        UUID selectedId = selectedOf(all, userClock.today(userId)).map(WorkPeriod::getId).orElse(null);
         Map<UUID, List<IntensiveRange>> rangesByPeriod = ranges
                 .findByPeriodIdInOrderByStartDate(all.stream().map(WorkPeriod::getId).toList())
                 .stream()
                 .collect(Collectors.groupingBy(IntensiveRange::getPeriodId));
         return all.stream()
-                .map(p -> mapper.toDto(p, rangesByPeriod.getOrDefault(p.getId(), List.of())))
+                .map(p -> mapper.toDto(p, rangesByPeriod.getOrDefault(p.getId(), List.of()),
+                        p.getId().equals(selectedId)))
                 .toList();
+    }
+
+    /** Periodo con el que trabaja el usuario (ver la clase); vacío si no tiene ninguno. */
+    @Transactional(readOnly = true)
+    public Optional<WorkPeriod> selected(UUID userId) {
+        return selectedOf(periods.findByUserIdOrderByStartDateDesc(userId), userClock.today(userId));
+    }
+
+    /** @param all periodos del usuario, el más reciente primero */
+    static Optional<WorkPeriod> selectedOf(List<WorkPeriod> all, LocalDate today) {
+        return all.stream().filter(WorkPeriod::isSelected).findFirst()
+                .or(() -> all.stream().filter(p -> p.contains(today)).findFirst())
+                .or(() -> all.stream().findFirst());
+    }
+
+    /**
+     * Periodo en el que se lee o escribe: el indicado o, sin {@code periodId}, el seleccionado. 400 si el
+     * usuario no tiene ningún periodo; 404 si el indicado no es suyo.
+     */
+    @Transactional(readOnly = true)
+    public WorkPeriod resolve(UUID userId, UUID periodId) {
+        if (periodId != null) {
+            return requireOwned(userId, periodId);
+        }
+        return selected(userId).orElseThrow(() -> new ValidationException("periodId", "Crea primero un periodo"));
+    }
+
+    /** 400 si la fecha no está dentro del periodo. */
+    public static void requireDateIn(WorkPeriod period, LocalDate date) {
+        if (!period.contains(date)) {
+            throw new ValidationException("date", "El " + DATE.format(date) + " no está dentro del periodo «"
+                    + period.getName() + "»");
+        }
+    }
+
+    /** Marca el periodo como seleccionado (y desmarca el anterior). No cambia la versión del periodo. */
+    @Transactional
+    public void select(UUID userId, UUID periodId) {
+        requireOwned(userId, periodId);
+        periods.clearSelected(userId);
+        periods.markSelected(userId, periodId);
     }
 
     @Transactional(readOnly = true)
@@ -77,7 +140,6 @@ public class PeriodService {
     public PeriodDto create(UUID userId, PeriodCreateRequest request) {
         validateParameters(request);
         IntensiveRangeValidator.validate(request.intensiveRanges(), request.startDate(), request.endDate());
-        ensureNoOverlap(userId, request.startDate(), request.endDate(), null);
 
         WorkPeriod period = new WorkPeriod();
         period.setUserId(userId);
@@ -92,7 +154,8 @@ public class PeriodService {
         if (!Boolean.FALSE.equals(request.preloadHolidays())) {
             holidayPreloader.preload(period.getId(), period.getStartDate(), period.getEndDate());
         }
-        return toDto(period);
+        select(userId, period.getId());
+        return mapper.toDto(period, ranges.findByPeriodIdOrderByStartDate(period.getId()), true);
     }
 
     @Transactional
@@ -103,13 +166,13 @@ public class PeriodService {
                     "El periodo ha cambiado en otra pestaña o dispositivo. Recarga y vuelve a intentarlo.");
         }
         validateParameters(request);
-        ensureNoOverlap(userId, request.startDate(), request.endDate(), periodId);
+        ensureRecordsInside(periodId, request.startDate(), request.endDate());
         apply(period, request);
         periods.saveAndFlush(period);
         return toDto(period);
     }
 
-    /** Borra el periodo con sus festivos y rangos de intensiva; los fichajes y ausencias se conservan. */
+    /** Borra el periodo con sus festivos y rangos de intensiva; sus fichajes y ausencias, en cascada en la BD. */
     @Transactional
     public void delete(UUID userId, UUID periodId) {
         WorkPeriod period = requireOwned(userId, periodId);
@@ -141,12 +204,21 @@ public class PeriodService {
     }
 
     private PeriodDto toDto(WorkPeriod period) {
-        return mapper.toDto(period, ranges.findByPeriodIdOrderByStartDate(period.getId()));
+        boolean selected = selected(period.getUserId()).map(p -> p.getId().equals(period.getId())).orElse(false);
+        return mapper.toDto(period, ranges.findByPeriodIdOrderByStartDate(period.getId()), selected);
     }
 
-    private void ensureNoOverlap(UUID userId, LocalDate start, LocalDate end, UUID excludeId) {
-        if (periods.existsOverlapping(userId, start, end, excludeId)) {
-            throw new ConflictException("Las fechas se solapan con otro de tus periodos");
+    /** Al cambiar las fechas, ningún fichaje ni ausencia del periodo puede quedar fuera. */
+    private void ensureRecordsInside(UUID periodId, LocalDate start, LocalDate end) {
+        if (workdays.existsByPeriodIdAndDateBefore(periodId, start)
+                || absences.existsByPeriodIdAndDateBefore(periodId, start)) {
+            throw new ValidationException("startDate", "Hay fichajes o ausencias antes del " + DATE.format(start)
+                    + ": bórralos antes de acortar el periodo");
+        }
+        if (workdays.existsByPeriodIdAndDateAfter(periodId, end)
+                || absences.existsByPeriodIdAndDateAfter(periodId, end)) {
+            throw new ValidationException("endDate", "Hay fichajes o ausencias después del " + DATE.format(end)
+                    + ": bórralos antes de acortar el periodo");
         }
     }
 

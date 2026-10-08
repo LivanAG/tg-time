@@ -4,7 +4,11 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
-/** Periodo anual con sus parámetros y rangos de intensiva (equivale a la hoja Horas). */
+/**
+ * Periodo anual con sus parámetros y rangos de intensiva (equivale a la hoja Horas).
+ *
+ * @param selected periodo con el que trabaja el usuario (exactamente uno si tiene alguno)
+ */
 public record PeriodDto(
         UUID id,
         String name,
@@ -20,5 +24,6 @@ public record PeriodDto(
         int maxRemotePct,
         int openingBalanceMin,
         List<IntensiveRangeDto> intensiveRanges,
+        boolean selected,
         Long version) {
 }

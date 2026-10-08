@@ -9,8 +9,18 @@ import { periodsApi } from '../../api/endpoints'
 import { invalidatePeriodData } from '../../api/queryKeys'
 import type { PeriodDto } from '../../api/types'
 import { Modal } from '../../components/Modal'
-import { Alert, Button, Card, CheckboxField, FormErrors, QueryError, Spinner, TextField } from '../../components/ui'
-import { usePeriods } from '../../hooks/usePeriods'
+import {
+  Alert,
+  Badge,
+  Button,
+  Card,
+  CheckboxField,
+  FormErrors,
+  QueryError,
+  Spinner,
+  TextField,
+} from '../../components/ui'
+import { useSelectedPeriod } from '../../hooks/usePeriods'
 import { formatDate } from '../../lib/dates'
 import { applyServerErrors } from '../../lib/formErrors'
 import { formatMinutes } from '../../lib/time'
@@ -28,7 +38,7 @@ type Editing = { mode: 'create' } | { mode: 'edit'; period: PeriodDto }
 
 export function PeriodsSection() {
   const queryClient = useQueryClient()
-  const periodsQuery = usePeriods()
+  const { periodsQuery, period: selected, selectPeriod } = useSelectedPeriod()
   const [params, setParams] = useSearchParams()
   const [editing, setEditing] = useState<Editing | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
@@ -51,7 +61,7 @@ export function PeriodsSection() {
     mutationFn: (id: string) => periodsApi.remove(id),
     onSuccess: () => {
       setConfirmDelete(null)
-      setMessage('Periodo borrado. Los fichajes y ausencias se conservan.')
+      setMessage('Periodo borrado junto con sus fichajes y ausencias.')
       void invalidatePeriodData(queryClient)
     },
   })
@@ -71,6 +81,8 @@ export function PeriodsSection() {
       <div className="space-y-3">
         <p className="text-sm text-slate-600">
           Cada periodo equivale a la hoja Horas del Excel: fechas, convenio, vacaciones, jornadas, intensiva y límites.
+          Cada uno tiene sus propios fichajes y ausencias, así que pueden solaparse (p. ej. uno de pruebas). Todas las
+          pantallas muestran el periodo <strong>en uso</strong>; cámbialo aquí o con el selector de periodo.
         </p>
         {message && <Alert tone="success">{message}</Alert>}
         {remove.isError && <Alert tone="error">{remove.error.message}</Alert>}
@@ -83,15 +95,33 @@ export function PeriodsSection() {
         )}
         <ul className="space-y-3">
           {periods.map((period) => (
-            <li key={period.id} className="rounded-lg border border-slate-200 p-3">
+            <li
+              key={period.id}
+              className={`rounded-lg border p-3 ${
+                period.id === selected?.id ? 'border-sky-300 bg-sky-50/50 ring-1 ring-sky-200' : 'border-slate-200'
+              }`}
+            >
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div>
-                  <p className="font-semibold text-slate-900">{period.name}</p>
+                  <p className="flex items-center gap-2 font-semibold text-slate-900">
+                    {period.name}
+                    {period.id === selected?.id && <Badge tone="sky">En uso</Badge>}
+                  </p>
                   <p className="text-sm text-slate-600">
                     {formatDate(period.startDate)} – {formatDate(period.endDate)}
                   </p>
                 </div>
                 <div className="flex gap-2">
+                  {period.id !== selected?.id && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => selectPeriod(period.id)}
+                      aria-label={`Usar el periodo ${period.name}`}
+                    >
+                      Usar este periodo
+                    </Button>
+                  )}
                   <Button
                     variant="secondary"
                     size="sm"
@@ -148,8 +178,9 @@ export function PeriodsSection() {
                   className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-900"
                 >
                   <p>
-                    ¿Borrar el periodo {period.name}? Se borran sus festivos y rangos de intensiva; los fichajes y las
-                    ausencias se conservan.
+                    ¿Borrar el periodo {period.name}? Se borran también{' '}
+                    <strong>todos sus fichajes y ausencias</strong>, sus festivos y sus rangos de intensiva. No se
+                    puede deshacer: si quieres conservar los datos, exporta antes los meses a Excel desde Registro.
                   </p>
                   <div className="mt-2 flex gap-2">
                     <Button variant="danger" size="sm" busy={remove.isPending} onClick={() => remove.mutate(period.id)}>
@@ -220,15 +251,13 @@ function PeriodFormDialog({ editing, periods, onClose, onSaved }: PeriodFormDial
     },
     onSuccess: (period) => {
       void invalidatePeriodData(queryClient)
-      onSaved(isEdit ? `Periodo ${period.name} guardado.` : `Periodo ${period.name} creado.`)
+      onSaved(isEdit ? `Periodo ${period.name} guardado.` : `Periodo ${period.name} creado y en uso.`)
     },
     onError: (error) => {
       void invalidatePeriodData(queryClient)
       if (isApiError(error) && error.status === 409) {
         setFormErrors([
-          isEdit
-            ? 'El periodo ha cambiado o se solapa con otro. Cierra y vuelve a abrirlo para cargar los datos actuales.'
-            : 'El periodo se solapa con otro que ya tienes.',
+          'El periodo ha cambiado en otra pestaña. Cierra y vuelve a abrirlo para cargar los datos actuales.',
         ])
         return
       }

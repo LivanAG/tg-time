@@ -11,6 +11,7 @@ import java.util.function.Consumer;
 import com.controlhorario.workday.BreakType;
 import com.controlhorario.workday.Location;
 import com.controlhorario.workday.calc.BreakInput;
+import com.controlhorario.workday.calc.MixedTimes;
 
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellStyle;
@@ -107,16 +108,43 @@ class ExcelWorkbookParserRulesTest {
     }
 
     @Test
-    void mixedLocationReadsTheRemoteStretchFromColumnsNAndO() {
-        ParsedDay day = singleDay(s -> {
+    void mixedLocationReadsTheHomeSegmentFromColumnsNAndO() {
+        // Casa al final de la jornada: la oficina es el resto.
+        ParsedDay homeLast = singleDay(s -> {
             time(s, "B7", "08:00");
             time(s, "I7", "16:00");
             text(s, "M7", "M");
             time(s, "N7", "13:00");
             time(s, "O7", "16:00");
         });
-        assertThat(day.location()).isEqualTo(Location.MIXTO);
-        assertThat(day.remoteMinutes()).isEqualTo(180);
+        assertThat(homeLast.location()).isEqualTo(Location.MIXTO);
+        assertThat(homeLast.mixed()).isEqualTo(new MixedTimes(LocalTime.of(8, 0), LocalTime.of(13, 0),
+                LocalTime.of(13, 0), LocalTime.of(16, 0)));
+
+        // Casa al principio y una "otra pausa" pegada al tramo en casa: es el hueco entre los tramos.
+        ParsedDay homeFirst = singleDay(s -> {
+            time(s, "B7", "07:00");
+            time(s, "I7", "15:00");
+            time(s, "G7", "09:00");
+            time(s, "H7", "10:00");
+            text(s, "M7", "M");
+            time(s, "N7", "07:00");
+            time(s, "O7", "09:00");
+        });
+        assertThat(homeFirst.mixed()).isEqualTo(new MixedTimes(LocalTime.of(10, 0), LocalTime.of(15, 0),
+                LocalTime.of(7, 0), LocalTime.of(9, 0)));
+        assertThat(homeFirst.breaks()).isEmpty();
+
+        // Un tramo en casa en mitad de la jornada (oficina antes y después) no se puede representar.
+        ParsedDay middle = singleDay(s -> {
+            time(s, "B7", "08:00");
+            time(s, "I7", "17:00");
+            text(s, "M7", "M");
+            time(s, "N7", "11:00");
+            time(s, "O7", "13:00");
+        });
+        assertThat(middle.mixed()).isNull();
+        assertThat(middle.errors()).anyMatch(e -> e.contains("debe empezar a la entrada (B) o terminar a la salida (I)"));
     }
 
     @Test

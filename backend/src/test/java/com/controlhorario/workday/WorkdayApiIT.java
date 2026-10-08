@@ -10,8 +10,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.time.LocalDate;
+import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 import com.controlhorario.common.audit.AuditLogRepository;
 import com.controlhorario.period.DomainApiTestSupport;
@@ -44,7 +47,8 @@ class WorkdayApiIT extends DomainApiTestSupport {
                 .andExpect(jsonPath("$.breaks[1].type").value("COMIDA"))
                 .andExpect(jsonPath("$.breaks[1].endTime").value("15:32"))
                 .andExpect(jsonPath("$.location").value("OFICINA"))
-                .andExpect(jsonPath("$.remoteMinutes").isEmpty())
+                .andExpect(jsonPath("$.officeStart").isEmpty())
+                .andExpect(jsonPath("$.homeEnd").isEmpty())
                 .andExpect(jsonPath("$.jiraMinutes").doesNotExist())
                 .andExpect(jsonPath("$.notes").isEmpty())
                 .andExpect(jsonPath("$.version").value(0))
@@ -88,27 +92,32 @@ class WorkdayApiIT extends DomainApiTestSupport {
                 .andExpect(jsonPath("$.errors[*].field", hasItem("breaks[0]")))
                 .andExpect(jsonPath("$.errors[*].field", hasItem("breaks[2]")));
 
-        Map<String, Object> mixedWithoutRemote = referenceDay();
-        mixedWithoutRemote.put("location", "MIXTO");
-        putWorkday(user, MAY_26, mixedWithoutRemote)
+        Map<String, Object> mixedWithoutSegments = referenceDay();
+        mixedWithoutSegments.put("location", "MIXTO");
+        putWorkday(user, MAY_26, mixedWithoutSegments)
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.errors[0].field").value("remoteMinutes"));
+                .andExpect(jsonPath("$.errors[*].field", hasItem("officeStart")))
+                .andExpect(jsonPath("$.errors[*].field", hasItem("homeStart")));
 
         Map<String, Object> missing = referenceDay();
         missing.put("startTime", null);
-        missing.put("remoteMinutes", -5);
-        missing.put("notes", "x".repeat(501));
         putWorkday(user, MAY_26, missing)
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.errors", hasSize(3)))
-                .andExpect(jsonPath("$.errors[*].field", hasItem("startTime")))
-                .andExpect(jsonPath("$.errors[*].field", hasItem("remoteMinutes")))
+                .andExpect(jsonPath("$.errors[0].field").value("startTime"))
+                .andExpect(jsonPath("$.errors[0].message").value("La entrada y la salida son obligatorias"));
+
+        Map<String, Object> tooLong = referenceDay();
+        tooLong.put("notes", "x".repeat(501));
+        tooLong.put("breaks", Arrays.asList(Map.of("type", "COMIDA", "startTime", "15:02", "endTime", "15:32"), null));
+        putWorkday(user, MAY_26, tooLong)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors", hasSize(2)))
                 .andExpect(jsonPath("$.errors[*].field", hasItem("notes")));
 
         putWorkday(user, LocalDate.of(2026, 5, 25), referenceDay())
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errors[0].field").value("date"))
-                .andExpect(jsonPath("$.errors[0].message").value("No hay ningún periodo que incluya esta fecha"));
+                .andExpect(jsonPath("$.errors[0].message").value("El 25/05/2026 no está dentro del periodo «2026-2027»"));
 
         mvc.perform(get("/api/workdays/2026-05-26").with(as(user))).andExpect(status().isNotFound());
     }
@@ -155,38 +164,64 @@ class WorkdayApiIT extends DomainApiTestSupport {
     }
 
     @Test
-    void remoteMinutesAreOnlyStoredWithMixedLocation() throws Exception {
+    void mixedDaysStoreTheOfficeAndHomeSegments() throws Exception {
         User user = newUser();
         createExcelPeriod(user);
 
+        // Los tramos solo se guardan con MIXTO.
         Map<String, Object> home = referenceDay();
         home.put("location", "CASA");
-        home.put("remoteMinutes", 100);
+        home.put("officeStart", "07:25");
         putWorkday(user, MAY_26, home)
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.remoteMinutes").isEmpty())
+                .andExpect(jsonPath("$.officeStart").isEmpty())
                 .andExpect(jsonPath("$.totals.remoteMinutes").value(604))
                 .andExpect(jsonPath("$.totals.officeMinutes").value(0));
 
+        // Oficina 07:25-14:00 (con el desayuno) y casa 15:00-17:59 (con la comida). La entrada y la salida
+        // del día salen de los tramos y el hueco 14:00-15:00 no cuenta.
         Map<String, Object> mixed = referenceDay();
         mixed.put("location", "MIXTO");
-        mixed.put("remoteMinutes", 240);
+        mixed.put("startTime", null);
+        mixed.put("endTime", null);
+        mixed.put("officeStart", "07:25");
+        mixed.put("officeEnd", "14:00");
+        mixed.put("homeStart", "15:00");
+        mixed.put("homeEnd", "17:59");
         mixed.put("notes", "  teletrabajo tardes  ");
         mixed.put("version", 0);
         putWorkday(user, MAY_26, mixed)
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.remoteMinutes").value(240))
+                .andExpect(jsonPath("$.startTime").value("07:25"))
+                .andExpect(jsonPath("$.endTime").value("17:59"))
+                .andExpect(jsonPath("$.officeEnd").value("14:00"))
+                .andExpect(jsonPath("$.homeStart").value("15:00"))
                 .andExpect(jsonPath("$.notes").value("teletrabajo tardes"))
-                .andExpect(jsonPath("$.totals.remoteMinutes").value(240))
-                .andExpect(jsonPath("$.totals.officeMinutes").value(364));
+                .andExpect(jsonPath("$.totals.grossMinutes").value(395 + 179))
+                .andExpect(jsonPath("$.totals.workedMinutes").value(574 - 30))
+                .andExpect(jsonPath("$.totals.remoteMinutes").value(179 - 30))
+                .andExpect(jsonPath("$.totals.officeMinutes").value(395));
+        mvc.perform(get("/api/workdays/2026-05-26").with(as(user)))
+                .andExpect(jsonPath("$.officeStart").value("07:25"))
+                .andExpect(jsonPath("$.homeEnd").value("17:59"));
+
+        // Una pausa en el hueco no vale.
+        Map<String, Object> breakInGap = new LinkedHashMap<>(mixed);
+        breakInGap.put("breaks", List.of(Map.of("type", "OTRA", "startTime", "14:15", "endTime", "14:30")));
+        breakInGap.put("version", 1);
+        putWorkday(user, MAY_26, breakInGap)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors[0].message").value("La pausa debe estar dentro del tramo de oficina o del de casa"));
 
         Map<String, Object> office = referenceDay();
-        office.put("remoteMinutes", 240);
+        office.put("officeStart", "07:25");
+        office.put("homeEnd", "17:59");
         office.put("version", 1);
         putWorkday(user, MAY_26, office)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.location").value("OFICINA"))
-                .andExpect(jsonPath("$.remoteMinutes").isEmpty());
+                .andExpect(jsonPath("$.officeStart").isEmpty())
+                .andExpect(jsonPath("$.homeEnd").isEmpty());
     }
 
     @Test
@@ -250,18 +285,24 @@ class WorkdayApiIT extends DomainApiTestSupport {
     void workdaysOfOtherUsersAreNotFound() throws Exception {
         User owner = newUser();
         User intruder = newUser();
-        createExcelPeriod(owner);
+        UUID ownerPeriod = createExcelPeriod(owner);
         putWorkday(owner, MAY_26, referenceDay()).andExpect(status().isOk());
 
+        // Sin periodos, el intruso no puede ni leer ni fichar.
+        mvc.perform(get("/api/workdays/2026-05-26").with(as(intruder)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors[0].field").value("periodId"));
+        // Con el periodo del dueño: 404, como si no existiera.
+        mvc.perform(get("/api/workdays/2026-05-26").param("periodId", ownerPeriod.toString()).with(as(intruder)))
+                .andExpect(status().isNotFound());
+        mvc.perform(delete("/api/workdays/2026-05-26").param("periodId", ownerPeriod.toString()).with(as(intruder)))
+                .andExpect(status().isNotFound());
+        // Con su propio periodo de las mismas fechas no ve nada del dueño.
+        createExcelPeriod(intruder);
         mvc.perform(get("/api/workdays/2026-05-26").with(as(intruder))).andExpect(status().isNotFound());
-        mvc.perform(delete("/api/workdays/2026-05-26").with(as(intruder))).andExpect(status().isNotFound());
         mvc.perform(get("/api/workdays").param("from", "2026-05-01").param("to", "2026-05-31").with(as(intruder)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$", hasSize(0)));
-        // El intruso no tiene periodo: no puede fichar ese día (y no toca el fichaje del dueño).
-        putWorkday(intruder, MAY_26, referenceDay())
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.errors[0].field").value("date"));
 
         mvc.perform(get("/api/workdays/2026-05-26").with(as(owner)))
                 .andExpect(status().isOk())

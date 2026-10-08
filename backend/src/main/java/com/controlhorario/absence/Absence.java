@@ -25,6 +25,10 @@ public class Absence {
     @Column(name = "user_id", nullable = false)
     private UUID userId;
 
+    /** Cada periodo tiene sus propias ausencias (los periodos pueden solaparse). */
+    @Column(name = "period_id", nullable = false, updatable = false)
+    private UUID periodId;
+
     @Column(nullable = false)
     private LocalDate date;
 
@@ -41,13 +45,15 @@ public class Absence {
     protected Absence() {
     }
 
-    public Absence(UUID userId, LocalDate date) {
+    public Absence(UUID userId, UUID periodId, LocalDate date) {
         this.userId = userId;
+        this.periodId = periodId;
         this.date = date;
     }
 
     public UUID getId() { return id; }
     public UUID getUserId() { return userId; }
+    public UUID getPeriodId() { return periodId; }
     public LocalDate getDate() { return date; }
     public AbsenceType getType() { return type; }
     public void setType(AbsenceType type) { this.type = type; }

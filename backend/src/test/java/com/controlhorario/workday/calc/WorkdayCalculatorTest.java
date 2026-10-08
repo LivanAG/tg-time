@@ -89,12 +89,18 @@ class WorkdayCalculatorTest {
         assertThat(result.workedMinutes()).isEqualTo(465);
     }
 
+    private static WorkdayInput mixed(String officeStart, String officeEnd, String homeStart, String homeEnd,
+            BreakInput... breaks) {
+        return new WorkdayInput(LocalDate.of(2026, 5, 26), null, null, List.of(breaks), Location.MIXTO,
+                new MixedTimes(t(officeStart), t(officeEnd), t(homeStart), t(homeEnd)));
+    }
+
     @Test
     void locationSplitsOfficeAndRemoteMinutes() {
         WorkdayInput base = day("08:00", "16:00");
         WorkdayInput office = base;
         WorkdayInput home = new WorkdayInput(base.date(), base.start(), base.end(), List.of(), Location.CASA, null);
-        WorkdayInput mixed = new WorkdayInput(base.date(), base.start(), base.end(), List.of(), Location.MIXTO, 180);
+        WorkdayInput mixed = mixed("08:00", "13:00", "13:00", "16:00");
 
         assertThat(calculator.calculate(office)).extracting(WorkdayResult::officeMinutes, WorkdayResult::remoteMinutes)
                 .containsExactly(480, 0);
@@ -105,7 +111,32 @@ class WorkdayCalculatorTest {
     }
 
     @Test
-    void validatesTimesBreaksAndRemoteMinutes() {
+    void mixedDayCountsBothSegmentsButNotTheGapBetweenThem() {
+        // Oficina 07:30-14:00 con desayuno de 30 min (10 por encima de la tolerancia); casa 15:00-18:00 con
+        // comida de 20 min (se descuenta el mínimo de 30). El hueco 14:00-15:00 no cuenta.
+        WorkdayInput day = mixed("07:30", "14:00", "15:00", "18:00",
+                br(BreakType.DESAYUNO, "10:00", "10:30"), br(BreakType.COMIDA, "16:00", "16:20"));
+        assertThat(day.start()).isEqualTo(t("07:30"));
+        assertThat(day.end()).isEqualTo(t("18:00"));
+        assertThat(calculator.validate(day)).isEmpty();
+
+        WorkdayResult result = calculator.calculate(day);
+        assertThat(result.grossMinutes()).isEqualTo(390 + 180);
+        assertThat(result.workedMinutes()).isEqualTo(570 - 10 - 30);
+        // Lo que se descuenta de cada pausa va a su tramo: casa 180 - 30, oficina 390 - 10.
+        assertThat(result.remoteMinutes()).isEqualTo(150);
+        assertThat(result.officeMinutes()).isEqualTo(380);
+
+        // En casa por la mañana y en la oficina por la tarde, también con hueco.
+        WorkdayInput homeFirst = mixed("10:00", "15:00", "07:00", "09:00");
+        assertThat(homeFirst.start()).isEqualTo(t("07:00"));
+        assertThat(homeFirst.end()).isEqualTo(t("15:00"));
+        assertThat(calculator.calculate(homeFirst)).extracting(WorkdayResult::grossMinutes,
+                WorkdayResult::officeMinutes, WorkdayResult::remoteMinutes).containsExactly(420, 300, 120);
+    }
+
+    @Test
+    void validatesTimesBreaksAndMixedSegments() {
         assertThat(codes(day("16:00", "08:00"))).containsExactly(WorkdayCalculator.END_BEFORE_START);
         assertThat(codes(day("08:00", "16:00", br(BreakType.OTRA, "07:30", "08:15"))))
                 .containsExactly(WorkdayCalculator.BREAK_OUTSIDE_WORKDAY);
@@ -120,10 +151,14 @@ class WorkdayCalculatorTest {
 
         WorkdayInput mixedWithout = new WorkdayInput(LocalDate.of(2026, 6, 1), t("08:00"), t("16:00"), List.of(),
                 Location.MIXTO, null);
-        WorkdayInput mixedTooMuch = new WorkdayInput(LocalDate.of(2026, 6, 1), t("08:00"), t("16:00"), List.of(),
-                Location.MIXTO, 500);
-        assertThat(codes(mixedWithout)).containsExactly(WorkdayCalculator.REMOTE_MINUTES_REQUIRED);
-        assertThat(codes(mixedTooMuch)).containsExactly(WorkdayCalculator.REMOTE_MINUTES_EXCEED_WORKED);
+        assertThat(calculator.validate(mixedWithout)).extracting(CalcIssue::field).containsExactly("officeStart",
+                "homeStart");
+        assertThat(calculator.validate(mixed("08:00", "13:00", "16:00", "15:00"))).extracting(CalcIssue::field)
+                .containsExactly("homeEnd");
+        assertThat(codes(mixed("08:00", "13:00", "12:00", "16:00"))).containsExactly(WorkdayCalculator.SEGMENTS_OVERLAP);
+        // Una pausa en el hueco entre los tramos no vale: el hueco ya no se trabaja.
+        assertThat(codes(mixed("08:00", "13:00", "14:00", "17:00", br(BreakType.OTRA, "13:15", "13:30"))))
+                .containsExactly(WorkdayCalculator.BREAK_OUTSIDE_WORKDAY);
         assertThat(codes(day("07:25", "17:59", br(BreakType.DESAYUNO, "12:43", "13:02")))).isEmpty();
     }
 

@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest'
 
 import { Duration } from '../components/Duration'
 import {
-  currentTime,
   durationInputValue,
   formatMinutes,
   formatOptionalMinutes,
@@ -64,10 +63,6 @@ describe('parseTime', () => {
     expect(minutesToTime(parseTime('17:59') as number)).toBe('17:59')
     expect(normalizeTime('7:05')).toBe('07:05')
     expect(normalizeTime('basura')).toBe('basura')
-  })
-
-  it('currentTime usa la hora local', () => {
-    expect(currentTime(new Date(2026, 9, 7, 8, 5))).toBe('08:05')
   })
 })
 

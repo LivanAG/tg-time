@@ -3,6 +3,6 @@ package com.controlhorario.workday;
 public enum Location {
     OFICINA,
     CASA,
-    /** Parte en casa (remoteMinutes) y el resto en la oficina. */
+    /** Un tramo en la oficina y otro en casa, cada uno con su entrada y su salida. */
     MIXTO
 }

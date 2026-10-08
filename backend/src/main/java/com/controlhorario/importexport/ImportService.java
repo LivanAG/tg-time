@@ -33,12 +33,13 @@ import com.controlhorario.importexport.excel.ExcelWorkbookReader;
 import com.controlhorario.importexport.excel.ParsedDay;
 import com.controlhorario.importexport.excel.ParsedWorkbook;
 import com.controlhorario.period.PeriodRulesFactory;
+import com.controlhorario.period.PeriodService;
 import com.controlhorario.period.WorkPeriod;
 import com.controlhorario.period.WorkPeriodRepository;
-import com.controlhorario.workday.Location;
 import com.controlhorario.workday.Workday;
 import com.controlhorario.workday.WorkdayBreak;
 import com.controlhorario.workday.WorkdayRepository;
+import com.controlhorario.workday.calc.MixedTimes;
 import com.controlhorario.workday.calc.WorkdayCalculator;
 import com.controlhorario.workday.calc.WorkdayInput;
 import com.controlhorario.workday.calc.WorkdayResult;
@@ -63,6 +64,7 @@ public class ImportService {
     static final String AUDIT_ENTITY = "xlsx";
 
     private final WorkPeriodRepository periods;
+    private final PeriodService periodService;
     private final PeriodRulesFactory rulesFactory;
     private final WorkdayRepository workdays;
     private final AbsenceRepository absences;
@@ -85,10 +87,11 @@ public class ImportService {
             List<AbsencePlan> absences, List<String> warnings) {
     }
 
-    public ImportService(WorkPeriodRepository periods, PeriodRulesFactory rulesFactory, WorkdayRepository workdays,
-            AbsenceRepository absences, AuditService audit, UserClock userClock, ImportMapper mapper,
-            PlatformTransactionManager transactionManager) {
+    public ImportService(WorkPeriodRepository periods, PeriodService periodService, PeriodRulesFactory rulesFactory,
+            WorkdayRepository workdays, AbsenceRepository absences, AuditService audit, UserClock userClock,
+            ImportMapper mapper, PlatformTransactionManager transactionManager) {
         this.periods = periods;
+        this.periodService = periodService;
         this.rulesFactory = rulesFactory;
         this.workdays = workdays;
         this.absences = absences;
@@ -143,11 +146,11 @@ public class ImportService {
         LocalDate from = months.get(0).atDay(1);
         LocalDate to = months.get(months.size() - 1).atEndOfMonth();
         Map<LocalDate, Workday> existingWorkdays = new HashMap<>();
-        for (Workday w : workdays.findByUserIdAndDateBetweenOrderByDate(userId, from, to)) {
+        for (Workday w : workdays.findByPeriodIdAndDateBetweenOrderByDate(period.getId(), from, to)) {
             existingWorkdays.put(w.getDate(), w);
         }
         Map<LocalDate, Absence> existingAbsences = new HashMap<>();
-        for (Absence a : absences.findByUserIdAndDateBetweenOrderByDate(userId, from, to)) {
+        for (Absence a : absences.findByPeriodIdAndDateBetweenOrderByDate(period.getId(), from, to)) {
             existingAbsences.put(a.getDate(), a);
         }
 
@@ -164,7 +167,10 @@ public class ImportService {
         return new Plan(period, parsed, options, List.copyOf(days), vacations, warnings(parsed, period, days));
     }
 
-    /** Periodo elegido o, por defecto, el del usuario que contiene más fechas del fichero (empate: el más reciente). */
+    /**
+     * Periodo elegido o, por defecto, el que contiene más fechas del fichero. Si empatan, el seleccionado
+     * y, si no está entre ellos, el más reciente.
+     */
     private WorkPeriod resolvePeriod(UUID userId, UUID periodId, ParsedWorkbook parsed) {
         if (periodId != null) {
             return periods.findByIdAndUserId(periodId, userId)
@@ -174,11 +180,12 @@ public class ImportService {
         if (dates.isEmpty()) {
             dates = parsed.monthDates();
         }
+        UUID selectedId = periodService.selected(userId).map(WorkPeriod::getId).orElse(null);
         WorkPeriod best = null;
         long bestCount = 0;
         for (WorkPeriod period : periods.findByUserIdOrderByStartDateDesc(userId)) {
             long count = dates.stream().filter(period::contains).count();
-            if (count > bestCount) {
+            if (count > bestCount || (count > 0 && count == bestCount && period.getId().equals(selectedId))) {
                 best = period;
                 bestCount = count;
             }
@@ -197,7 +204,7 @@ public class ImportService {
             errors.add("Fecha repetida: ya aparece en la hoja «" + duplicateOf.sheet() + "», fila " + duplicateOf.row());
         }
         WorkdayInput input = new WorkdayInput(day.date(), day.startTime(), day.endTime(), day.breaks(),
-                day.location(), day.location() == Location.MIXTO ? day.remoteMinutes() : null);
+                day.location(), day.mixed());
 
         Integer computed = null;
         if (day.representable()) {
@@ -304,11 +311,13 @@ public class ImportService {
                 continue;
             }
             WorkdayInput input = p.input();
-            Workday workday = p.existing() != null ? p.existing() : new Workday(userId, input.date());
+            Workday workday = p.existing() != null
+                    ? p.existing()
+                    : new Workday(userId, plan.period().getId(), input.date());
             workday.setStartTime(input.start());
             workday.setEndTime(input.end());
             workday.setLocation(input.location());
-            workday.setRemoteMinutes(input.location() == Location.MIXTO ? input.remoteMinutes() : null);
+            workday.setMixed(input.mixed());
             workday.replaceBreaks(input.breaks().stream()
                     .map(b -> new WorkdayBreak(b.type(), b.start(), b.end()))
                     .toList());
@@ -324,7 +333,7 @@ public class ImportService {
             if (p.action() != ImportAction.IMPORT) {
                 continue;
             }
-            Absence absence = new Absence(userId, p.date());
+            Absence absence = new Absence(userId, plan.period().getId(), p.date());
             absence.setType(AbsenceType.VACACIONES);
             absence.setHalfDay(false);
             absences.save(absence);
@@ -376,8 +385,10 @@ public class ImportService {
     }
 
     private ImportWorkdayDto workdayDto(WorkdayInput input) {
+        MixedTimes m = input.mixed();
         return new ImportWorkdayDto(input.start(), input.end(),
                 input.breaks().stream().map(mapper::toDto).toList(), input.location(),
-                input.remoteMinutes(), null);
+                m == null ? null : m.officeStart(), m == null ? null : m.officeEnd(),
+                m == null ? null : m.homeStart(), m == null ? null : m.homeEnd(), null);
     }
 }

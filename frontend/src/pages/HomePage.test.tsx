@@ -1,11 +1,46 @@
-import { fireEvent, screen, within } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
 import { authResponse, dashboard, dashboardWithoutPeriod, period, referenceDay } from '../test/fixtures'
-import { json, mockApi, problem } from '../test/fetchMock'
+import { json, mockApi, noContent, problem } from '../test/fetchMock'
 import { renderApp } from '../test/renderApp'
 
 describe('Inicio', () => {
+  it('con un periodo que aún no ha empezado lo avisa y ofrece cambiar al que incluye hoy', async () => {
+    const next = {
+      ...period,
+      id: '7c1e2d3f-4a5b-4c6d-8e9f-0a1b2c3d4e5f',
+      name: '2027-2028',
+      startDate: '2027-05-26',
+      endDate: '2028-05-25',
+    }
+    const { callsTo } = mockApi({
+      'POST /api/auth/refresh': json(authResponse()),
+      'GET /api/periods': [
+        { ...next, selected: true },
+        { ...period, selected: false },
+      ],
+      'GET /api/summary/dashboard': dashboard({
+        period: { id: next.id, name: next.name, startDate: next.startDate, endDate: next.endDate },
+        balanceToDateMinutes: 0,
+        currentMonth: { ...dashboard().currentMonth!, month: '2027-05' },
+        todayIsWorkingDay: false,
+        todayWorkday: null,
+      }),
+      [`PUT /api/periods/${period.id}/select`]: noContent(),
+    })
+
+    renderApp('/')
+
+    expect(await screen.findByText('Estás trabajando con el periodo 2027-2028')).toBeInTheDocument()
+    expect(screen.getByText('Saldo al empezar el periodo')).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Mayo de 2027' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Fichar hoy' })).not.toBeInTheDocument()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Cambiar a 2026-2027 para fichar hoy' }))
+    await waitFor(() => expect(callsTo('PUT', `/api/periods/${period.id}/select`)).toHaveLength(1))
+  })
+
   it('con periodo muestra el saldo con signo y color, el mes, las vacaciones y el teletrabajo', async () => {
     mockApi({ 'POST /api/auth/refresh': json(authResponse()), 'GET /api/summary/dashboard': dashboard() })
 
@@ -109,7 +144,7 @@ describe('Inicio', () => {
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'Crear periodo' }))
 
-    expect(await screen.findByText('Periodo 2026-2027 creado.')).toBeInTheDocument()
+    expect(await screen.findByText('Periodo 2026-2027 creado y en uso.')).toBeInTheDocument()
     expect(callsTo('POST', '/api/periods')[0].body).toEqual({
       name: '2026-2027',
       startDate: '2026-05-26',

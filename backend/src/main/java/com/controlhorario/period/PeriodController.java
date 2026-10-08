@@ -53,6 +53,13 @@ public class PeriodController {
         return service.update(currentUser.id(), id, request);
     }
 
+    /** Elige el periodo con el que trabajan todas las pantallas. */
+    @PutMapping("/{id}/select")
+    public ResponseEntity<Void> select(@PathVariable UUID id) {
+        service.select(currentUser.id(), id);
+        return ResponseEntity.noContent().build();
+    }
+
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         service.delete(currentUser.id(), id);

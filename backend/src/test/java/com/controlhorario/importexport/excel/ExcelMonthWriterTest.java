@@ -20,6 +20,7 @@ import com.controlhorario.summary.calc.MonthSummaryService;
 import com.controlhorario.workday.BreakType;
 import com.controlhorario.workday.Location;
 import com.controlhorario.workday.calc.BreakInput;
+import com.controlhorario.workday.calc.MixedTimes;
 import com.controlhorario.workday.calc.WorkdayCalculator;
 import com.controlhorario.workday.calc.WorkdayInput;
 
@@ -136,23 +137,42 @@ class ExcelMonthWriterTest {
     }
 
     @Test
-    void mixedLocationAndOtherBreaksSurviveTheRoundTrip() {
+    void mixedSegmentsWithAGapSurviveTheRoundTrip() {
         LocalDate date = LocalDate.of(2026, 10, 5);
-        WorkdayInput mixed = new WorkdayInput(date, LocalTime.of(8, 0), LocalTime.of(17, 0),
+        // Oficina 08:00-12:00 y casa 13:00-17:00: el hueco 12:00-13:00 se escribe como "otra pausa" (G/H).
+        WorkdayInput mixed = new WorkdayInput(date, null, null,
                 List.of(new BreakInput(BreakType.DESAYUNO, LocalTime.of(10, 0), LocalTime.of(10, 25)),
-                        new BreakInput(BreakType.COMIDA, LocalTime.of(14, 0), LocalTime.of(14, 20)),
-                        new BreakInput(BreakType.OTRA, LocalTime.of(16, 0), LocalTime.of(16, 10))),
-                Location.MIXTO, 120);
+                        new BreakInput(BreakType.COMIDA, LocalTime.of(14, 0), LocalTime.of(14, 20))),
+                Location.MIXTO, new MixedTimes(LocalTime.of(8, 0), LocalTime.of(12, 0), LocalTime.of(13, 0),
+                        LocalTime.of(17, 0)));
         byte[] bytes = export(YearMonth.of(2026, 10), List.of(mixed));
 
         ParsedDay day = ExcelWorkbookReader.read(bytes, new ExcelWorkbookParser()::parse).days().get(0);
 
         assertThat(day.date()).isEqualTo(date);
-        assertThat(day.breaks()).containsExactlyElementsOf(mixed.breaks());
+        assertThat(day.startTime()).isEqualTo(LocalTime.of(8, 0));
+        assertThat(day.endTime()).isEqualTo(LocalTime.of(17, 0));
         assertThat(day.location()).isEqualTo(Location.MIXTO);
-        assertThat(day.remoteMinutes()).isEqualTo(120);
-        // 540 - 5 (desayuno) - 30 (comida mínima) - 10 (otra) = 495
-        assertThat(day.excelWorkedMinutes()).isEqualTo(495);
+        assertThat(day.mixed()).isEqualTo(mixed.mixed());
+        assertThat(day.breaks()).containsExactlyElementsOf(mixed.breaks());
+        // 240 + 240 - 5 (desayuno) - 30 (comida mínima) = 445, igual que el Excel (L = I - B - pausas).
+        assertThat(day.excelWorkedMinutes()).isEqualTo(445);
         assertThat(day.representable()).isTrue();
+    }
+
+    @Test
+    void mixedSegmentsWithoutGapKeepTheirOtherBreaks() {
+        LocalDate date = LocalDate.of(2026, 10, 6);
+        WorkdayInput mixed = new WorkdayInput(date, null, null,
+                List.of(new BreakInput(BreakType.OTRA, LocalTime.of(16, 0), LocalTime.of(16, 10))),
+                Location.MIXTO, new MixedTimes(LocalTime.of(8, 0), LocalTime.of(13, 0), LocalTime.of(13, 0),
+                        LocalTime.of(17, 0)));
+        byte[] bytes = export(YearMonth.of(2026, 10), List.of(mixed));
+
+        ParsedDay day = ExcelWorkbookReader.read(bytes, new ExcelWorkbookParser()::parse).days().get(0);
+
+        assertThat(day.mixed()).isEqualTo(mixed.mixed());
+        assertThat(day.breaks()).containsExactlyElementsOf(mixed.breaks());
+        assertThat(day.excelWorkedMinutes()).isEqualTo(530);
     }
 }

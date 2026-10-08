@@ -10,7 +10,7 @@ import { formatDayMonth, formatDayShort, todayIso } from '../../lib/dates'
 import { LOCATION_LABELS } from '../../lib/format'
 import { apiFieldToPath } from '../../lib/formErrors'
 import { formatMinutes, normalizeTime, TIME_PATTERN } from '../../lib/time'
-import { liveCalculation, validateWorkday, type CalcRules } from '../../lib/workdayCalc'
+import { liveCalculation, mixedBounds, validateWorkday, type CalcRules, type CalcWorkday } from '../../lib/workdayCalc'
 import { breaksSummary, dayLabel, dayTone, groupByWeek, isInlineEditable } from './dayInfo'
 
 interface MonthTableProps {
@@ -71,6 +71,7 @@ export function MonthTable({ summary, rules, onOpenDay, onNotice }: MonthTablePr
                     // La fila se reinicia con los datos del servidor cuando cambia la versión del día.
                     key={`${day.date}-${day.workday?.version ?? 'nuevo'}`}
                     day={day}
+                    periodId={summary.periodId}
                     rules={rules}
                     isToday={day.date === today}
                     onOpenDay={onOpenDay}
@@ -141,11 +142,21 @@ function InfoDayRow({ day, isToday, onOpenDay }: { day: DayDto; isToday: boolean
   )
 }
 
+/** Lo que se edita en la fila. En MIXTO, los dos tramos; si no, entrada y salida. */
 interface Draft {
   startTime: string
   endTime: string
   location: WorkLocation
+  officeStart: string
+  officeEnd: string
+  homeStart: string
+  homeEnd: string
 }
+
+const TIME_KEYS = ['startTime', 'endTime', 'officeStart', 'officeEnd', 'homeStart', 'homeEnd'] as const
+const MIXED_KEYS = ['officeStart', 'officeEnd', 'homeStart', 'homeEnd'] as const
+/** Hueco fijo para el icono 🏢/🏠 de la columna Entrada (vacío en los días que no son mixtos). */
+const ICON_SLOT = 'inline-block w-5 shrink-0 text-center'
 
 function draftOf(day: DayDto): Draft {
   const w = day.workday
@@ -153,16 +164,56 @@ function draftOf(day: DayDto): Draft {
     startTime: w?.startTime ?? '',
     endTime: w?.endTime ?? '',
     location: w?.location ?? 'OFICINA',
+    officeStart: w?.officeStart ?? '',
+    officeEnd: w?.officeEnd ?? '',
+    homeStart: w?.homeStart ?? '',
+    homeEnd: w?.homeEnd ?? '',
   }
 }
 
 function sameDraft(a: Draft, b: Draft): boolean {
-  return a.startTime === b.startTime && a.endTime === b.endTime && a.location === b.location
+  return a.location === b.location && TIME_KEYS.every((key) => a[key] === b[key])
 }
 
-type FieldErrors = Partial<Record<'startTime' | 'endTime' | 'location', string>>
+/** Al cambiar la ubicación se reaprovechan las horas: como en el editor completo. */
+function withLocation(draft: Draft, location: WorkLocation): Draft {
+  const next = { ...draft, location }
+  if (location === 'MIXTO') {
+    if (MIXED_KEYS.every((key) => draft[key] === '')) {
+      next.officeStart = draft.startTime
+      next.homeEnd = draft.endTime
+    }
+  } else if (draft.startTime === '' && draft.endTime === '') {
+    const bounds = mixedBounds(draft)
+    if (bounds) {
+      next.startTime = bounds.startTime
+      next.endTime = bounds.endTime
+    }
+  }
+  return next
+}
 
-const INLINE_FIELDS = ['startTime', 'endTime', 'location'] as const
+function calcInputOf(draft: Draft, breaks: CalcWorkday['breaks']): CalcWorkday {
+  const mixed = draft.location === 'MIXTO'
+  return {
+    startTime: draft.startTime || null,
+    endTime: draft.endTime || null,
+    breaks,
+    location: draft.location,
+    mixed: mixed
+      ? {
+          officeStart: draft.officeStart || null,
+          officeEnd: draft.officeEnd || null,
+          homeStart: draft.homeStart || null,
+          homeEnd: draft.homeEnd || null,
+        }
+      : null,
+  }
+}
+
+type FieldErrors = Partial<Record<(typeof INLINE_FIELDS)[number], string>>
+
+const INLINE_FIELDS = ['startTime', 'endTime', 'location', 'officeStart', 'officeEnd', 'homeStart', 'homeEnd'] as const
 
 function isInlineField(field: string): field is (typeof INLINE_FIELDS)[number] {
   return (INLINE_FIELDS as readonly string[]).includes(field)
@@ -170,13 +221,15 @@ function isInlineField(field: string): field is (typeof INLINE_FIELDS)[number] {
 
 interface EditableDayRowProps {
   day: DayDto
+  /** Periodo del mes mostrado: el fichaje se guarda en él. */
+  periodId: string
   rules: CalcRules
   isToday: boolean
   onOpenDay: (date: string) => void
   onNotice: (message: string) => void
 }
 
-function EditableDayRow({ day, rules, isToday, onOpenDay, onNotice }: EditableDayRowProps) {
+function EditableDayRow({ day, periodId, rules, isToday, onOpenDay, onNotice }: EditableDayRowProps) {
   const queryClient = useQueryClient()
   const initial = useMemo(() => draftOf(day), [day])
   const [draft, setDraft] = useState<Draft>(initial)
@@ -190,7 +243,7 @@ function EditableDayRow({ day, rules, isToday, onOpenDay, onNotice }: EditableDa
   const label = formatDayShort(day.date)
 
   const save = useMutation({
-    mutationFn: ({ body }: { body: WorkdayRequest; draft: Draft }) => workdaysApi.save(day.date, body),
+    mutationFn: ({ body }: { body: WorkdayRequest; draft: Draft }) => workdaysApi.save(day.date, periodId, body),
     onSuccess: (saved, { draft: sent }) => {
       savedRef.current = { draft: sent, version: saved.version }
       setFieldErrors({})
@@ -222,37 +275,32 @@ function EditableDayRow({ day, rules, isToday, onOpenDay, onNotice }: EditableDa
     },
   })
 
-  const calcInput = {
-    startTime: draft.startTime || null,
-    endTime: draft.endTime || null,
-    breaks: workday?.breaks ?? [],
-    location: draft.location,
-    remoteMinutes: draft.location === 'MIXTO' ? (workday?.remoteMinutes ?? null) : null,
-  }
+  const mixed = draft.location === 'MIXTO'
+  const calcInput = calcInputOf(draft, workday?.breaks ?? [])
 
   const commit = () => {
     const baseline = savedRef.current?.draft ?? initial
     if (sameDraft(draft, baseline) || save.isPending) {
       return
     }
+    const timeKeys = mixed ? MIXED_KEYS : (['startTime', 'endTime'] as const)
     // Un día sin fichar y sin horas no se crea (p. ej. solo se ha tocado la ubicación).
-    if (!workday && draft.startTime === '' && draft.endTime === '') {
+    if (!workday && timeKeys.every((key) => draft[key] === '')) {
       return
     }
     const fields: FieldErrors = {}
     const rest: string[] = []
-    if (draft.startTime && !TIME_PATTERN.test(draft.startTime)) {
-      fields.startTime = 'Hora no válida (HH:mm)'
+    for (const key of timeKeys) {
+      if (draft[key] && !TIME_PATTERN.test(draft[key])) {
+        fields[key] = 'Hora no válida (HH:mm)'
+      }
     }
-    if (draft.endTime && !TIME_PATTERN.test(draft.endTime)) {
-      fields.endTime = 'Hora no válida (HH:mm)'
-    }
-    if (!fields.startTime && !fields.endTime) {
+    if (Object.keys(fields).length === 0) {
       for (const issue of validateWorkday(calcInput, rules)) {
         if (issue.field && isInlineField(issue.field)) {
           fields[issue.field] = issue.message
         } else {
-          rest.push(issue.field === 'remoteMinutes' ? `${issue.message}: ábrelo en el editor completo.` : issue.message)
+          rest.push(issue.message)
         }
       }
     }
@@ -261,14 +309,19 @@ function EditableDayRow({ day, rules, isToday, onOpenDay, onNotice }: EditableDa
     if (Object.keys(fields).length > 0 || rest.length > 0) {
       return
     }
+    // En MIXTO, la entrada y la salida del día son la primera y la última de los tramos.
+    const bounds = mixed ? mixedBounds(draft) : null
     save.mutate({
       draft,
       body: {
-        startTime: normalizeTime(draft.startTime),
-        endTime: normalizeTime(draft.endTime),
+        startTime: normalizeTime(bounds?.startTime ?? draft.startTime),
+        endTime: normalizeTime(bounds?.endTime ?? draft.endTime),
         breaks: workday?.breaks ?? [],
         location: draft.location,
-        remoteMinutes: draft.location === 'MIXTO' ? (workday?.remoteMinutes ?? null) : null,
+        officeStart: mixed ? normalizeTime(draft.officeStart) : null,
+        officeEnd: mixed ? normalizeTime(draft.officeEnd) : null,
+        homeStart: mixed ? normalizeTime(draft.homeStart) : null,
+        homeEnd: mixed ? normalizeTime(draft.homeEnd) : null,
         notes: workday?.notes ?? null,
         version: savedRef.current?.version ?? workday?.version ?? null,
       },
@@ -297,6 +350,19 @@ function EditableDayRow({ day, rules, isToday, onOpenDay, onNotice }: EditableDa
 
   const live = dirty ? liveCalculation(calcInput, rules).result : null
   const set = (patch: Partial<Draft>) => setDraft((d) => ({ ...d, ...patch }))
+  // Reparto oficina/casa de un día mixto: el recalculado si hay cambios, si no el guardado.
+  const split = live ?? (workday?.location === 'MIXTO' ? workday.totals : null)
+  const timeInput = (key: (typeof TIME_KEYS)[number], ariaLabel: string) => (
+    <input
+      type="time"
+      aria-label={`${ariaLabel} del ${label}`}
+      aria-invalid={fieldErrors[key] ? true : undefined}
+      value={draft[key]}
+      onChange={(e) => set({ [key]: e.target.value })}
+      onKeyDown={onKeyDown}
+      className={`${inputClass(fieldErrors[key])} w-[6.5rem]`}
+    />
+  )
   const inputClass = (error?: string) =>
     `rounded border px-1.5 py-1 text-sm tabular-nums focus:border-sky-600 focus:outline-none focus:ring-2 focus:ring-sky-600/30 ${
       error ? 'border-red-500' : 'border-slate-300'
@@ -313,15 +379,28 @@ function EditableDayRow({ day, rules, isToday, onOpenDay, onNotice }: EditableDa
       >
         <DateCell day={day} isToday={isToday} />
         <td className="px-2 py-1.5">
-          <input
-            type="time"
-            aria-label={`Entrada del ${label}`}
-            aria-invalid={fieldErrors.startTime ? true : undefined}
-            value={draft.startTime}
-            onChange={(e) => set({ startTime: e.target.value })}
-            onKeyDown={onKeyDown}
-            className={`${inputClass(fieldErrors.startTime)} w-[6.5rem]`}
-          />
+          {/* Todas las filas reservan el hueco del icono: así las entradas quedan alineadas. */}
+          {mixed ? (
+            <div className="space-y-1">
+              <div className="flex items-center gap-1">
+                <span aria-hidden="true" title="Oficina" className={ICON_SLOT}>
+                  🏢
+                </span>
+                {timeInput('officeStart', 'Entrada en la oficina')}
+              </div>
+              <div className="flex items-center gap-1">
+                <span aria-hidden="true" title="Casa" className={ICON_SLOT}>
+                  🏠
+                </span>
+                {timeInput('homeStart', 'Entrada en casa')}
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1">
+              <span aria-hidden="true" className={ICON_SLOT} />
+              {timeInput('startTime', 'Entrada')}
+            </div>
+          )}
         </td>
         <td className="max-w-[14rem] px-2 py-1.5 text-xs text-slate-600">
           {workday && workday.breaks.length > 0 ? (
@@ -332,15 +411,14 @@ function EditableDayRow({ day, rules, isToday, onOpenDay, onNotice }: EditableDa
           {day.absence && <span className="block text-emerald-800">{dayLabel(day)}</span>}
         </td>
         <td className="px-2 py-1.5">
-          <input
-            type="time"
-            aria-label={`Salida del ${label}`}
-            aria-invalid={fieldErrors.endTime ? true : undefined}
-            value={draft.endTime}
-            onChange={(e) => set({ endTime: e.target.value })}
-            onKeyDown={onKeyDown}
-            className={`${inputClass(fieldErrors.endTime)} w-[6.5rem]`}
-          />
+          {mixed ? (
+            <div className="flex flex-col items-start gap-1">
+              {timeInput('officeEnd', 'Salida de la oficina')}
+              {timeInput('homeEnd', 'Salida de casa')}
+            </div>
+          ) : (
+            timeInput('endTime', 'Salida')
+          )}
         </td>
         <td className="px-2 py-1.5 text-right font-medium tabular-nums">
           {live ? (
@@ -360,7 +438,7 @@ function EditableDayRow({ day, rules, isToday, onOpenDay, onNotice }: EditableDa
           <select
             aria-label={`Ubicación del ${label}`}
             value={draft.location}
-            onChange={(e) => set({ location: e.target.value as WorkLocation })}
+            onChange={(e) => setDraft((d) => withLocation(d, e.target.value as WorkLocation))}
             onKeyDown={onKeyDown}
             className={`${inputClass(fieldErrors.location)} bg-white`}
           >
@@ -370,6 +448,11 @@ function EditableDayRow({ day, rules, isToday, onOpenDay, onNotice }: EditableDa
               </option>
             ))}
           </select>
+          {mixed && split && (
+            <p className="mt-1 whitespace-nowrap text-xs text-slate-600 tabular-nums">
+              oficina {formatMinutes(split.officeMinutes)} · casa {formatMinutes(split.remoteMinutes)}
+            </p>
+          )}
         </td>
         <td className="px-2 py-1.5">
           {save.isPending ? (

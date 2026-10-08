@@ -8,11 +8,13 @@ import { useAuth } from '../auth/AuthContext'
 import { Duration } from '../components/Duration'
 import { IssueList } from '../components/IssueList'
 import { buttonClasses } from '../components/buttonClasses'
-import { Button, Card, QueryError, Spinner, Stat } from '../components/ui'
+import { Alert, Button, Card, QueryError, Spinner, Stat } from '../components/ui'
 import { useDayEditor } from '../features/workday/DayEditorContext'
-import { capitalize, formatDateLong, formatMonthLong } from '../lib/dates'
+import { findPeriodForDate, useSelectedPeriod } from '../hooks/usePeriods'
+import { capitalize, formatDate, formatDateLong, formatMonthLong, monthOf } from '../lib/dates'
 import { formatDays, formatNumber, formatPct } from '../lib/format'
 import { formatMinutes } from '../lib/time'
+import { timesSummary } from './record/dayInfo'
 
 export function HomePage() {
   const { user } = useAuth()
@@ -38,15 +40,44 @@ export function HomePage() {
   )
 }
 
+/** Dónde queda hoy respecto al periodo seleccionado. */
+type PeriodTiming = 'current' | 'future' | 'past'
+
+const BALANCE_LABELS: Record<PeriodTiming, string> = {
+  current: 'Saldo acumulado hasta hoy',
+  future: 'Saldo al empezar el periodo',
+  past: 'Saldo final del periodo',
+}
+
+function periodTiming({ today, period }: DashboardDto): PeriodTiming {
+  if (period && today < period.startDate) {
+    return 'future'
+  }
+  return period && today > period.endDate ? 'past' : 'current'
+}
+
 function Dashboard({ dashboard }: { dashboard: DashboardDto }) {
   const { openDay } = useDayEditor()
+  const { periods, selectPeriod } = useSelectedPeriod()
   const today = dashboard.todayWorkday
+  const period = dashboard.period
+  const timing = periodTiming(dashboard)
+  // Si hoy cae en otro periodo, se ofrece cambiar a él para fichar.
+  const periodWithToday = timing === 'current' ? undefined : findPeriodForDate(periods, dashboard.today)
 
   return (
     <>
+      {period && timing !== 'current' && (
+        <Alert title={`Estás trabajando con el periodo ${period.name}`}>
+          {formatDate(period.startDate)} – {formatDate(period.endDate)}:{' '}
+          {timing === 'future'
+            ? 'aún no ha empezado. Se muestra su primer mes.'
+            : 'ya ha terminado. Se muestran su último mes y su saldo final.'}
+        </Alert>
+      )}
       <div className="grid gap-4 md:grid-cols-2">
         <Card className="flex flex-col justify-between">
-          <p className="text-sm font-medium text-slate-600">Saldo acumulado hasta hoy</p>
+          <p className="text-sm font-medium text-slate-600">{BALANCE_LABELS[timing]}</p>
           <p className="mt-1 text-5xl font-bold tracking-tight">
             <Duration minutes={dashboard.balanceToDateMinutes} />
           </p>
@@ -57,10 +88,23 @@ function Dashboard({ dashboard }: { dashboard: DashboardDto }) {
 
         <Card className="flex flex-col gap-3">
           <p className="text-sm font-medium text-slate-600">Hoy</p>
-          {today ? (
+          {timing !== 'current' ? (
+            <>
+              <p className="text-slate-800">Hoy no está dentro del periodo {period?.name}.</p>
+              {periodWithToday && (
+                <Button
+                  variant="secondary"
+                  className="w-full sm:w-auto"
+                  onClick={() => selectPeriod(periodWithToday.id)}
+                >
+                  Cambiar a {periodWithToday.name} para fichar hoy
+                </Button>
+              )}
+            </>
+          ) : today ? (
             <p className="text-slate-800">
               <span className="text-lg font-semibold tabular-nums">
-                {today.startTime} – {today.endTime}
+                {timesSummary(today)}
               </span>{' '}
               · total <strong className="tabular-nums">{formatMinutes(today.totals.workedMinutes)}</strong>
             </p>
@@ -71,14 +115,21 @@ function Dashboard({ dashboard }: { dashboard: DashboardDto }) {
           ) : (
             <p className="text-slate-800">Hoy no es laborable.</p>
           )}
-          <Button size="lg" className="w-full sm:w-auto" onClick={() => openDay(dashboard.today)}>
-            {today ? 'Editar el fichaje de hoy' : 'Fichar hoy'}
-          </Button>
+          {timing === 'current' && (
+            <Button size="lg" className="w-full sm:w-auto" onClick={() => openDay(dashboard.today)}>
+              {today ? 'Editar el fichaje de hoy' : 'Fichar hoy'}
+            </Button>
+          )}
         </Card>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {dashboard.currentMonth && <CurrentMonthCard month={dashboard.currentMonth} />}
+        {dashboard.currentMonth && (
+          <CurrentMonthCard
+            month={dashboard.currentMonth}
+            isCurrent={dashboard.currentMonth.month === monthOf(dashboard.today)}
+          />
+        )}
         {dashboard.vacations && <VacationsCard vacations={dashboard.vacations} />}
         {dashboard.currentMonth && <RemoteCard month={dashboard.currentMonth} />}
         <Card title="Horas a recuperar y proyección" titleId="home-projection">
@@ -100,9 +151,10 @@ function Dashboard({ dashboard }: { dashboard: DashboardDto }) {
   )
 }
 
-function CurrentMonthCard({ month }: { month: DashboardMonthDto }) {
+function CurrentMonthCard({ month, isCurrent }: { month: DashboardMonthDto; isCurrent: boolean }) {
+  const title = isCurrent ? `Mes actual: ${formatMonthLong(month.month)}` : capitalize(formatMonthLong(month.month))
   return (
-    <Card title={`Mes actual: ${formatMonthLong(month.month)}`} titleId="home-month">
+    <Card title={title} titleId="home-month">
       <dl className="grid grid-cols-3 gap-3">
         <Stat label="Teóricas">
           <Duration minutes={month.theoreticalMinutes} signed={false} />

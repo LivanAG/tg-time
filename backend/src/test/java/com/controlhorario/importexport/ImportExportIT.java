@@ -15,8 +15,10 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.YearMonth;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -166,8 +168,8 @@ class ImportExportIT {
         assertThat(result.detectedSettings())
                 .isEqualTo(new DetectedSettingsDto(20, 30, 50, 480, 420, 23, 105_600));
 
-        assertThat(workdays.findByUserIdAndDateBetweenOrderByDate(user.getId(), FROM, TO)).isEmpty();
-        assertThat(absences.findByUserIdAndDateBetweenOrderByDate(user.getId(), FROM, TO)).isEmpty();
+        assertThat(workdaysOf(user, FROM, TO)).isEmpty();
+        assertThat(absencesOf(user, FROM, TO)).isEmpty();
         assertThat(auditLogs.findByUserIdOrderByAtDesc(user.getId())).isEmpty();
     }
 
@@ -195,7 +197,7 @@ class ImportExportIT {
         assertThat(result.absences()).hasSize(13).allMatch(a -> a.action() == ImportAction.SKIP);
         assertThat(result.counts().vacationsToCreate()).isZero();
         assertThat(result.counts().vacationsCreated()).isZero();
-        assertThat(absences.findByUserIdAndDateBetweenOrderByDate(user.getId(), FROM, TO)).isEmpty();
+        assertThat(absencesOf(user, FROM, TO)).isEmpty();
     }
 
     @Test
@@ -228,7 +230,7 @@ class ImportExportIT {
                 .andExpect(jsonPath("$.dryRun").value(false)));
 
         assertThat(result.counts()).isEqualTo(new ImportCountsDto(84, 84, 138, 0, 0, 13, 0, 13, 13));
-        List<Workday> saved = workdays.findByUserIdAndDateBetweenOrderByDate(user.getId(), FROM, TO);
+        List<Workday> saved = workdaysOf(user, FROM, TO);
         assertThat(saved).extracting(Workday::getDate).containsExactlyElementsOf(result.days().stream()
                 .filter(d -> d.status() == ImportDayStatus.NEW).map(ImportDayDto::date).sorted().toList());
 
@@ -246,7 +248,7 @@ class ImportExportIT {
         assertThat(saved).allSatisfy(w -> assertThat(CALCULATOR.calculate(WorkdayInputs.from(w)).workedMinutes())
                 .isEqualTo(byDate.get(w.getDate()).excelWorkedMinutes()));
 
-        List<Absence> vacations = absences.findByUserIdAndDateBetweenOrderByDate(user.getId(), FROM, TO);
+        List<Absence> vacations = absencesOf(user, FROM, TO);
         assertThat(vacations).extracting(Absence::getDate).containsExactlyElementsOf(expectedVacations());
         assertThat(vacations).allMatch(a -> a.getType() == AbsenceType.VACACIONES && !a.isHalfDay());
 
@@ -275,8 +277,8 @@ class ImportExportIT {
                 .andExpect(status().isOk()));
         assertThat(confirmedAgain.counts().imported()).isZero();
         assertThat(confirmedAgain.counts().vacationsCreated()).isZero();
-        assertThat(workdays.findByUserIdAndDateBetweenOrderByDate(user.getId(), FROM, TO)).hasSize(84);
-        assertThat(absences.findByUserIdAndDateBetweenOrderByDate(user.getId(), FROM, TO)).hasSize(13);
+        assertThat(workdaysOf(user, FROM, TO)).hasSize(84);
+        assertThat(absencesOf(user, FROM, TO)).hasSize(13);
     }
 
     @Test
@@ -285,7 +287,7 @@ class ImportExportIT {
         createExcelPeriod(user);
         upload(user, xlsx(EXCEL), "dryRun", "false").andExpect(status().isOk());
         new TransactionTemplate(transactionManager).executeWithoutResult(tx -> {
-            Workday may26 = workdays.findByUserIdAndDate(user.getId(), MAY_26).orElseThrow();
+            Workday may26 = workdayOf(user, MAY_26).orElseThrow();
             may26.setEndTime(LocalTime.of(16, 0));
             may26.replaceBreaks(List.of());
         });
@@ -300,11 +302,11 @@ class ImportExportIT {
                 .andExpect(status().isOk()));
         assertThat(result.counts().imported()).isEqualTo(84);
 
-        Workday may26 = workdays.findByUserIdAndDate(user.getId(), MAY_26).orElseThrow();
+        Workday may26 = workdayOf(user, MAY_26).orElseThrow();
         assertThat(may26.getEndTime()).isEqualTo(LocalTime.of(17, 59));
         assertThat(may26.getBreaks()).hasSize(2);
         assertThat(CALCULATOR.calculate(WorkdayInputs.from(may26)).workedMinutes()).isEqualTo(604);
-        assertThat(workdays.findByUserIdAndDateBetweenOrderByDate(user.getId(), FROM, TO)).hasSize(84);
+        assertThat(workdaysOf(user, FROM, TO)).hasSize(84);
     }
 
     // ------------------------------------------------------------------ errores
@@ -330,7 +332,7 @@ class ImportExportIT {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errors[0].field").value("file"))
                 .andExpect(jsonPath("$.errors[0].message").value(containsString("macros")));
-        assertThat(workdays.findByUserIdAndDateBetweenOrderByDate(user.getId(), FROM, TO)).isEmpty();
+        assertThat(workdaysOf(user, FROM, TO)).isEmpty();
     }
 
     @Test
@@ -417,8 +419,8 @@ class ImportExportIT {
 
         LocalDate from = LocalDate.of(2026, 6, 1);
         LocalDate to = LocalDate.of(2026, 6, 30);
-        List<String> original = snapshot(workdays.findByUserIdAndDateBetweenOrderByDate(livan.getId(), from, to));
-        List<String> reimported = snapshot(workdays.findByUserIdAndDateBetweenOrderByDate(other.getId(), from, to));
+        List<String> original = snapshot(workdaysOf(livan, from, to));
+        List<String> reimported = snapshot(workdaysOf(other, from, to));
         assertThat(original).hasSize(22);
         assertThat(reimported).containsExactlyElementsOf(original);
     }
@@ -429,16 +431,43 @@ class ImportExportIT {
         mvc.perform(get("/api/export/xlsx").param("year", "2026").param("month", "6").with(auth(user)))
                 .andExpect(status().isNotFound());
 
-        createExcelPeriod(user);
+        WorkPeriod period = createExcelPeriod(user);
         mvc.perform(get("/api/export/xlsx").param("year", "2026").param("month", "13").with(auth(user)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errors[0].field").value("month"));
         mvc.perform(get("/api/export/xlsx").param("year", "2026").param("month", "12").with(auth(user)))
                 .andExpect(status().isOk())
                 .andExpect(header().string("Content-Disposition", "attachment; filename=\"horas-2026-12.xlsx\""));
+        // Con periodId: el periodo indicado, que debe tocar el mes.
+        mvc.perform(get("/api/export/xlsx").param("year", "2026").param("month", "12")
+                        .param("periodId", period.getId().toString()).with(auth(user)))
+                .andExpect(status().isOk());
+        mvc.perform(get("/api/export/xlsx").param("year", "2027").param("month", "12")
+                        .param("periodId", period.getId().toString()).with(auth(user)))
+                .andExpect(status().isNotFound());
     }
 
     // ------------------------------------------------------------------ utilidades
+
+    /** Fichajes del usuario en todos sus periodos, por fecha. */
+    private List<Workday> workdaysOf(User user, LocalDate from, LocalDate to) {
+        return periods.findByUserIdOrderByStartDateDesc(user.getId()).stream()
+                .flatMap(p -> workdays.findByPeriodIdAndDateBetweenOrderByDate(p.getId(), from, to).stream())
+                .sorted(Comparator.comparing(Workday::getDate))
+                .toList();
+    }
+
+    private Optional<Workday> workdayOf(User user, LocalDate date) {
+        return workdaysOf(user, date, date).stream().findFirst();
+    }
+
+    /** Ausencias del usuario en todos sus periodos, por fecha. */
+    private List<Absence> absencesOf(User user, LocalDate from, LocalDate to) {
+        return periods.findByUserIdOrderByStartDateDesc(user.getId()).stream()
+                .flatMap(p -> absences.findByPeriodIdAndDateBetweenOrderByDate(p.getId(), from, to).stream())
+                .sorted(Comparator.comparing(Absence::getDate))
+                .toList();
+    }
 
     private User newUser() {
         User user = new User();
@@ -512,8 +541,8 @@ class ImportExportIT {
     private static List<String> snapshot(List<Workday> list) {
         List<String> rows = new ArrayList<>();
         for (Workday w : list) {
-            rows.add(w.getDate() + " " + w.getStartTime() + "-" + w.getEndTime() + " " + w.getLocation() + " remote="
-                    + w.getRemoteMinutes() + " "
+            rows.add(w.getDate() + " " + w.getStartTime() + "-" + w.getEndTime() + " " + w.getLocation() + " oficina="
+                    + w.getOfficeStart() + "-" + w.getOfficeEnd() + " casa=" + w.getHomeStart() + "-" + w.getHomeEnd() + " "
                     + w.getBreaks().stream().map(b -> b.getType() + " " + b.getStartTime() + "-" + b.getEndTime())
                             .toList());
         }

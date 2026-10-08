@@ -9,7 +9,6 @@ import { periodsApi } from '../../api/endpoints'
 import { invalidateDayData, queryKeys } from '../../api/queryKeys'
 import type { HolidayScope, PeriodDto } from '../../api/types'
 import { NoPeriod } from '../../components/NoPeriod'
-import { PeriodPicker } from '../../components/PeriodPicker'
 import {
   Alert,
   Badge,
@@ -29,17 +28,9 @@ import { applyServerErrors } from '../../lib/formErrors'
 const SCOPES: HolidayScope[] = ['NACIONAL', 'AUTONOMICO', 'LOCAL', 'EMPRESA']
 
 export function HolidaysSection() {
-  const { periodsQuery, periods, period, selectPeriod } = useSelectedPeriod()
+  const { periodsQuery, period } = useSelectedPeriod()
   return (
-    <Card
-      title="Festivos"
-      titleId="settings-holidays"
-      actions={
-        periods &&
-        periods.length > 1 &&
-        period && <PeriodPicker periods={periods} value={period.id} onChange={selectPeriod} />
-      }
-    >
+    <Card title={period ? `Festivos del periodo ${period.name}` : 'Festivos'} titleId="settings-holidays">
       {periodsQuery.isPending ? (
         <Spinner />
       ) : periodsQuery.isError ? (

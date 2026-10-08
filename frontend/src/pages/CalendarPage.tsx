@@ -7,7 +7,6 @@ import { queryKeys } from '../api/queryKeys'
 import type { CalendarDayDto, PeriodDto, PeriodSummaryDto, YearMonth } from '../api/types'
 import { IssueList } from '../components/IssueList'
 import { NoPeriod } from '../components/NoPeriod'
-import { PeriodPicker } from '../components/PeriodPicker'
 import { Card, QueryError, Spinner, Stat } from '../components/ui'
 import { AbsenceDialog } from '../features/absence/AbsenceDialog'
 import { useDayEditor } from '../features/workday/DayEditorContext'
@@ -79,7 +78,7 @@ function groupByMonth(days: CalendarDayDto[]): [YearMonth, Map<string, CalendarD
 }
 
 export function CalendarPage() {
-  const { periodsQuery, periods, period, selectPeriod } = useSelectedPeriod()
+  const { periodsQuery, period } = useSelectedPeriod()
 
   return (
     <div className="space-y-4">
@@ -88,9 +87,6 @@ export function CalendarPage() {
           <h1 className="text-2xl font-semibold text-slate-900">Calendario</h1>
           <p className="text-sm text-slate-600">Toca un día laborable para marcar o quitar una ausencia.</p>
         </div>
-        {periods && periods.length > 1 && period && (
-          <PeriodPicker periods={periods} value={period.id} onChange={selectPeriod} />
-        )}
       </header>
       {periodsQuery.isPending ? (
         <Spinner />
@@ -138,6 +134,7 @@ function PeriodCalendar({ period }: { period: PeriodDto }) {
         <AbsenceDialog
           key={selected.date}
           date={selected.date}
+          periodId={period.id}
           absence={selected.absence}
           dayMinutes={selected.dayMinutes}
           onClose={() => setSelected(null)}

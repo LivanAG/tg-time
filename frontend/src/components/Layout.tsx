@@ -3,7 +3,7 @@ import { NavLink, Outlet, useLocation } from 'react-router'
 
 import { useAuth } from '../auth/AuthContext'
 import { useIsDesktop } from '../hooks/useMediaQuery'
-import { monthOf, todayIso } from '../lib/dates'
+import { PeriodSwitcher } from './PeriodSwitcher'
 import { Button } from './ui'
 
 interface NavItem {
@@ -39,7 +39,7 @@ function navItems(): NavItem[] {
       icon: <Icon d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z" />,
     },
     {
-      to: `/registro/${monthOf(todayIso())}`,
+      to: '/registro',
       label: 'Registro',
       icon: (
         <Icon d="M8 3v3M16 3v3M4 8h16M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM8 12h3M8 16h6" />
@@ -67,7 +67,7 @@ export function Layout() {
   const isDesktop = useIsDesktop()
   const { pathname } = useLocation()
   const items = navItems()
-  // El enlace de Registro apunta al mes actual, pero debe marcarse en cualquier mes.
+  // El enlace de Registro abre el mes de referencia del periodo, pero debe marcarse en cualquier mes.
   const isActiveItem = (item: NavItem, isActive: boolean) =>
     isActive || (item.to.startsWith('/registro') && pathname.startsWith('/registro'))
 
@@ -86,6 +86,9 @@ export function Layout() {
           <div className="px-5 py-5">
             <p className="text-lg font-semibold text-slate-900">Control Horario</p>
             {user && <p className="truncate text-sm text-slate-500">{user.name}</p>}
+            <div className="mt-4">
+              <PeriodSwitcher />
+            </div>
           </div>
           <nav aria-label="Principal" className="flex-1 px-3">
             <ul className="space-y-1">
@@ -120,6 +123,7 @@ export function Layout() {
         {!isDesktop && (
           <header className="sticky top-0 z-30 flex items-center justify-between border-b border-slate-200 bg-white/95 px-4 py-3 backdrop-blur">
             <span className="text-base font-semibold">Control Horario</span>
+            <PeriodSwitcher compact />
             <Button variant="ghost" size="sm" onClick={() => void logout()}>
               Salir
             </Button>

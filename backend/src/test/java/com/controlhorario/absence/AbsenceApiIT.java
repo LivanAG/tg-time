@@ -82,11 +82,11 @@ class AbsenceApiIT extends DomainApiTestSupport {
         putAbsence(user, LocalDate.of(2026, 10, 12), "VACACIONES", false)
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errors[0].field").value("date"));
-        // Fuera de cualquier periodo.
+        // Fuera del periodo.
         putAbsence(user, LocalDate.of(2026, 5, 25), "VACACIONES", false)
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errors[0].field").value("date"))
-                .andExpect(jsonPath("$.errors[0].message").value("No hay ningún periodo que incluya esta fecha"));
+                .andExpect(jsonPath("$.errors[0].message").value("El 25/05/2026 no está dentro del periodo «2026-2027»"));
         // Sin tipo.
         mvc.perform(put("/api/absences/2026-07-10").with(as(user)).contentType(MediaType.APPLICATION_JSON)
                         .content("{\"halfDay\":false}"))
