@@ -11,6 +11,7 @@ services:
     image: local/control-horario-frontend-dev
     environment:
       API_PROXY_TARGET: http://backend:8080
+      WATCH_POLLING: "true"                # recarga en caliente con el código montado desde Windows
     ports: ["127.0.0.1:5173:5173"]
     volumes: ["./frontend:/app", "/app/node_modules"]
 networks:
