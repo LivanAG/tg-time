@@ -26,7 +26,6 @@ import com.controlhorario.period.WorkPeriodRepository;
 import com.controlhorario.summary.calc.AbsenceInput;
 import com.controlhorario.summary.calc.AbsenceInputs;
 import com.controlhorario.summary.calc.DaySummary;
-import com.controlhorario.summary.calc.MonthRow;
 import com.controlhorario.summary.calc.MonthSummary;
 import com.controlhorario.summary.calc.MonthSummaryService;
 import com.controlhorario.summary.calc.PeriodSummary;
@@ -117,7 +116,7 @@ public class SummaryService {
         if (yearMonth.isAfter(YearMonth.from(period.getStartDate()))) {
             PeriodSummary periodSummary = periodSummaryService.summarize(data.calendar(), data.workdayInputs(),
                     data.absenceInputs(), today);
-            opening = openingBalance(periodSummary, yearMonth, data.rules());
+            opening = periodSummary.openingBalanceAt(yearMonth);
         } else {
             opening = data.rules().openingBalanceMin();
         }
@@ -160,7 +159,7 @@ public class SummaryService {
                 data.absenceInputs(), today);
         YearMonth month = YearMonth.from(referenceDate(period, today));
         MonthSummary monthSummary = monthSummaryService.summarize(calendar, month, data.workdayInputs(),
-                data.absenceInputs(), openingBalance(periodSummary, month, data.rules()), today);
+                data.absenceInputs(), periodSummary.openingBalanceAt(month), today);
 
         WorkdayDto todayWorkday = monthSummary.days().stream()
                 .filter(d -> d.date().equals(today) && d.workday() != null)
@@ -212,7 +211,7 @@ public class SummaryService {
         return new MonthSummaryDto(data.period().getId(), s.month().toString(), s.status(), s.workingDays(),
                 s.normalDays(), s.intensiveDays(), s.calendarMinutes(), s.theoreticalMinutes(), s.vacationDays(),
                 s.vacationMinutes(), s.bridgeDays(), s.bridgeMinutes(), s.workedMinutes(), s.roundedMinutes(),
-                s.differenceMinutes(), s.theoreticalToDateMinutes(), s.workedToDateMinutes(),
+                s.differenceMinutes(), s.theoreticalToDateMinutes(), s.workedToDateMinutes(), s.roundedToDateMinutes(),
                 s.differenceToDateMinutes(), s.openingBalanceMinutes(), s.closingBalanceMinutes(), s.remoteMinutes(),
                 s.officeMinutes(), s.remotePct(), s.remoteDays(), rules.maxRemotePct(),
                 workdayMapper.toIssues(s.warnings()), mapper.toWeekDtos(s.weeks()), days);
@@ -226,16 +225,6 @@ public class SummaryService {
         return new DayDto(day.date(), day.dayType(), day.intensive(), day.dayMinutes(), day.holidayName(), absence,
                 workday, day.theoreticalMinutes(), day.workedMinutes(), day.roundedMinutes(), day.countdownMinutes(),
                 workdayMapper.toIssues(day.warnings()));
-    }
-
-    /** Saldo al empezar el mes: el acumulado del mes anterior, o el saldo inicial en el primer mes. */
-    static int openingBalance(PeriodSummary periodSummary, YearMonth month, PeriodRules rules) {
-        YearMonth previous = month.minusMonths(1);
-        return periodSummary.months().stream()
-                .filter(row -> row.month().equals(previous))
-                .findFirst()
-                .map(MonthRow::cumulativeBalanceMinutes)
-                .orElse(rules.openingBalanceMin());
     }
 
     /** Periodo con más días dentro del mes; si empatan, el más reciente. */

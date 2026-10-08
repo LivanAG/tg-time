@@ -59,7 +59,9 @@ describe('Registro mensual', () => {
     const close = screen.getByRole('region', { name: 'Cierre del mes' })
     expect(within(close).getByText('160:00')).toBeInTheDocument()
     expect(within(close).getAllByText('33:04').length).toBeGreaterThan(0)
-    // Tabla de horas: mes completo y hasta hoy, con la diferencia con signo y color.
+    // Tabla de horas: mes completo y hasta hoy, sin redondear y redondeadas, y la diferencia con signo y color.
+    expect(within(close).getByRole('row', { name: /Hechas sin redondear/ })).toHaveTextContent('33:04')
+    expect(within(close).getByRole('row', { name: /Hechas redondeadas/ })).toHaveTextContent('33:00')
     const difference = within(close).getByRole('row', { name: /Diferencia/ })
     expect(within(difference).getAllByText('-126:56')[0]).toHaveClass('text-red-600')
     expect(within(close).getAllByText('+8:50').length).toBeGreaterThan(0)

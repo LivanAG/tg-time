@@ -218,7 +218,8 @@ MonthSummaryDto {
   "workingDays": 22, "normalDays": 10, "intensiveDays": 12, "calendarMinutes": 9840,
   "theoreticalMinutes": 9840, "vacationDays": 0, "vacationMinutes": 0, "bridgeDays": 0, "bridgeMinutes": 0,
   "workedMinutes": 9960, "roundedMinutes": 9960, "differenceMinutes": 120,
-  "theoreticalToDateMinutes": 9840, "workedToDateMinutes": 9960, "differenceToDateMinutes": 120,
+  "theoreticalToDateMinutes": 9840, "workedToDateMinutes": 9960, "roundedToDateMinutes": 9960,
+  "differenceToDateMinutes": 120,
   "openingBalanceMinutes": 90, "closingBalanceMinutes": 210,
   "remoteMinutes": 4545, "officeMinutes": 5415, "remotePct": 45.6, "remoteDays": 10,
   "maxRemotePct": 50,
@@ -298,7 +299,8 @@ ImportResultDto {
               "workday": { "startTime", "endTime", "breaks", "location", "officeStart", "officeEnd",
                            "homeStart", "homeEnd", "notes" },
               "excelWorkedMinutes": 466, "computedWorkedMinutes": 466, "messages": [ "..." ] } ],
-  "absences": [ { "date": "2026-07-10", "type": "VACACIONES", "action": "IMPORT" | "SKIP", "reason": "..." } ],
+  "absences": [ { "date": "2026-07-10", "type": "VACACIONES", "halfDay": false, "action": "IMPORT" | "SKIP",
+                  "reason": "..." } ],
   "detectedSettings": { "breakfastToleranceMin": 20, "minLunchMin": 30, "maxRemotePct": 50,
                         "normalDayMinutes": 480, "intensiveDayMinutes": 420,
                         "vacationDays": 23, "agreementMinutes": 105600 },
@@ -308,9 +310,20 @@ ImportResultDto {
               "vacationsToCreate": 13, "vacationsCreated": 0 }
 }
 ```
+`absences` son las vacaciones deducidas del Excel de la empresa (días laborables sin fichaje) o las
+ausencias escritas en la columna Ausencia de un Excel exportado por la app (de cualquier tipo, también medio
+día); `vacationsToCreate`/`vacationsCreated` cuentan todas ellas.
 400 si no es un .xlsx válido (tipo MIME, firma `PK\x03\x04`, sin macros) o no hay periodo; 413 si pasa de 2 MB.
 
 ### `GET /api/export/xlsx?year=2026&month=6[&periodId=uuid]`
 Sin `periodId`, el periodo con más días en el mes (404 si `periodId` no toca el mes).
-Descarga `horas-2026-06.xlsx` con el formato de la hoja mensual del Excel original (mismas columnas,
-por lo que se puede volver a importar).
+Descarga `horas-2026-06.xlsx`: una hoja con el diseño de la app (todos los días del mes con oficina y casa
+en columnas separadas, total y redondeado juntos, subtotales semanales y resumen; ver docs/EXCEL.md) que
+`POST /api/import/xlsx` reconoce y vuelve a importar. El saldo de apertura es el acumulado al cerrar el mes
+anterior (el mismo que `GET /api/summary/month`).
+
+### `GET /api/export/xlsx/period[?periodId=uuid]`
+Sin `periodId`, el periodo seleccionado (400 si el usuario no tiene ninguno; 404 si `periodId` no es suyo).
+Descarga `horas-<nombre del periodo>.xlsx` (p. ej. `horas-2026-2027.xlsx`; el nombre sin tildes ni espacios):
+una hoja `Resumen` con lo mismo que `GET /api/summary/period/{id}` y después una hoja por cada mes que toca
+el periodo, también los futuros, con el formato de la exportación de un mes. Se puede reimportar entero.

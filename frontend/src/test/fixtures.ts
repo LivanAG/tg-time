@@ -234,6 +234,7 @@ export function octoberSummary(): MonthSummaryDto {
     differenceMinutes: -7616,
     theoreticalToDateMinutes: 1920,
     workedToDateMinutes: 1984,
+    roundedToDateMinutes: 1980,
     differenceToDateMinutes: 64,
     openingBalanceMinutes: 530,
     closingBalanceMinutes: -7086,
@@ -304,7 +305,9 @@ export function importPreview(overrides: Partial<ImportResultDto> = {}): ImportR
         messages: ['Día futuro: se omite salvo que incluyas los días futuros'],
       },
     ],
-    absences: [{ date: '2026-07-10', type: 'VACACIONES', action: 'IMPORT', reason: 'Laborable sin fichaje' }],
+    absences: [
+      { date: '2026-07-10', type: 'VACACIONES', halfDay: false, action: 'IMPORT', reason: 'Laborable sin fichaje' },
+    ],
     detectedSettings: {
       breakfastToleranceMin: 20,
       minLunchMin: 30,

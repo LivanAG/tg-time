@@ -9,12 +9,13 @@ import com.controlhorario.workday.calc.BreakInput;
 import com.controlhorario.workday.calc.MixedTimes;
 
 /**
- * Una fila de una hoja mensual con fichaje (columna B rellena), tal como viene en el Excel.
+ * Una fila de una hoja mensual con fichaje, tal como viene en el Excel (de la empresa o exportado por la app).
  *
  * @param date               fecha calculada por la posición de la fila (no la de la columna A)
  * @param row                número de fila en Excel (base 1)
  * @param breaks             pausas leídas de C/D, E/F y G/H (con la regla especial de la comida ya aplicada)
- * @param mixed              tramos de oficina y de casa (N/O), solo con ubicación MIXTO
+ * @param mixed              tramos de oficina y de casa, solo con ubicación MIXTO
+ * @param notes              notas del día (solo en los Excel exportados por la app)
  * @param excelWorkedMinutes Total Día (columna L), para comparar con el cálculo
  * @param representable      false si la comida está escrita a mano (J) sin horas y no se puede deducir
  * @param errors             problemas que impiden importar el día (celdas ilegibles, pausas incompletas)
@@ -29,6 +30,7 @@ public record ParsedDay(
         List<BreakInput> breaks,
         Location location,
         MixedTimes mixed,
+        String notes,
         Integer excelWorkedMinutes,
         boolean representable,
         List<String> errors,

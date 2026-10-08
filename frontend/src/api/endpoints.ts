@@ -118,4 +118,6 @@ export const importExportApi = {
   },
   exportXlsx: (year: number, month: number, periodId?: string | null) =>
     apiDownload('/export/xlsx', { year, month, periodId }, `horas-${year}-${String(month).padStart(2, '0')}.xlsx`),
+  /** Periodo completo: hoja Resumen y una hoja por mes. */
+  exportPeriodXlsx: (periodId: string) => apiDownload('/export/xlsx/period', { periodId }, 'horas-periodo.xlsx'),
 }

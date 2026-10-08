@@ -35,7 +35,9 @@ export function MonthClose({ summary }: { summary: MonthSummaryDto }) {
           <div>
             <SectionTitle>Horas</SectionTitle>
             <table className="w-full">
-              <caption className="sr-only">Horas teóricas, hechas y diferencia del mes y hasta hoy</caption>
+              <caption className="sr-only">
+                Horas teóricas, hechas sin redondear y redondeadas, y diferencia del mes y hasta hoy
+              </caption>
               <thead>
                 <tr className="border-b border-slate-200 text-xs text-slate-500">
                   <th scope="col" className="py-1.5 text-left font-medium">
@@ -63,13 +65,24 @@ export function MonthClose({ summary }: { summary: MonthSummaryDto }) {
                 </tr>
                 <tr className="border-b border-slate-100">
                   <th scope="row" className="py-1.5 text-left font-normal text-slate-600">
-                    Hechas
+                    Hechas sin redondear
                   </th>
                   <td className="py-1.5 text-right">
                     <Duration minutes={summary.workedMinutes} signed={false} />
                   </td>
                   <td className="py-1.5 text-right">
                     <Duration minutes={summary.workedToDateMinutes} signed={false} />
+                  </td>
+                </tr>
+                <tr className="border-b border-slate-100">
+                  <th scope="row" className="py-1.5 text-left font-normal text-slate-600">
+                    Hechas redondeadas
+                  </th>
+                  <td className="py-1.5 text-right">
+                    <Duration minutes={summary.roundedMinutes} signed={false} />
+                  </td>
+                  <td className="py-1.5 text-right">
+                    <Duration minutes={summary.roundedToDateMinutes} signed={false} />
                   </td>
                 </tr>
                 <tr className="font-semibold">
@@ -87,8 +100,8 @@ export function MonthClose({ summary }: { summary: MonthSummaryDto }) {
             </table>
             <p className="mt-2 text-xs text-slate-500">
               {summary.workingDays} laborables ({summary.normalDays} a jornada normal, {summary.intensiveDays} a
-              intensiva): {formatMinutes(summary.calendarMinutes)} de jornada. Redondeado del mes:{' '}
-              {formatMinutes(summary.roundedMinutes)}.
+              intensiva): {formatMinutes(summary.calendarMinutes)} de jornada. La diferencia y el saldo se calculan con
+              las horas sin redondear; el redondeado (tramos de 15 min) es lo que se imputa.
             </p>
           </div>
 

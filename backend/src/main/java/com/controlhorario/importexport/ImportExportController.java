@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
-/** Importar el Excel actual (vista previa y confirmación) y exportar un mes. Ver docs/API.md. */
+/** Importar el Excel (vista previa y confirmación) y exportar un mes o el periodo completo. Ver docs/API.md. */
 @RestController
 @RequestMapping("/api")
 public class ImportExportController {
@@ -55,7 +55,16 @@ public class ImportExportController {
     @GetMapping("/export/xlsx")
     public ResponseEntity<byte[]> exportXlsx(@RequestParam int year, @RequestParam int month,
             @RequestParam(required = false) UUID periodId) {
-        ExportService.ExportedFile file = exportService.exportMonth(currentUser.id(), year, month, periodId);
+        return download(exportService.exportMonth(currentUser.id(), year, month, periodId));
+    }
+
+    /** Periodo completo (sin {@code periodId}, el seleccionado): hoja Resumen y una hoja por mes. */
+    @GetMapping("/export/xlsx/period")
+    public ResponseEntity<byte[]> exportPeriodXlsx(@RequestParam(required = false) UUID periodId) {
+        return download(exportService.exportPeriod(currentUser.id(), periodId));
+    }
+
+    private static ResponseEntity<byte[]> download(ExportService.ExportedFile file) {
         return ResponseEntity.ok()
                 .contentType(XLSX)
                 .header(HttpHeaders.CONTENT_DISPOSITION,

@@ -1,5 +1,5 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import type { CalendarDayDto, MonthRowDto, PeriodSummaryDto } from '../api/types'
 import { authResponse, octoberSummary, period } from '../test/fixtures'
@@ -177,5 +177,30 @@ describe('Resumen anual', () => {
     const hours = screen.getByRole('region', { name: 'Vacaciones y horas' })
     expect(within(hours).getByText('-4:06')).toHaveClass('text-red-600')
     expect(within(hours).getByText('Saldo hasta hoy').nextElementSibling).toHaveTextContent('+9:54')
+  })
+
+  it('exporta el periodo seleccionado a Excel con su nombre de fichero', async () => {
+    // jsdom no implementa las URL de blobs.
+    const createObjectURL = vi.fn(() => 'blob:periodo')
+    URL.createObjectURL = createObjectURL
+    URL.revokeObjectURL = vi.fn()
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    const api = mockApi({
+      'POST /api/auth/refresh': json(authResponse()),
+      'GET /api/periods': [period],
+      [`GET /api/summary/period/${period.id}`]: periodSummary(),
+      'GET /api/export/xlsx/period': () =>
+        new Response('xlsx', { headers: { 'Content-Disposition': 'attachment; filename="horas-2026-2027.xlsx"' } }),
+    })
+    renderApp('/resumen')
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Exportar a Excel' }))
+
+    await waitFor(() => expect(api.callsTo('GET', '/api/export/xlsx/period')).toHaveLength(1))
+    expect(api.callsTo('GET', '/api/export/xlsx/period')[0].url.searchParams.get('periodId')).toBe(period.id)
+    await waitFor(() => expect(click).toHaveBeenCalled())
+    expect((click.mock.contexts[0] as HTMLAnchorElement).download).toBe('horas-2026-2027.xlsx')
+    expect(createObjectURL).toHaveBeenCalledOnce()
+    click.mockRestore()
   })
 })

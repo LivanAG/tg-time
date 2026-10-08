@@ -280,6 +280,8 @@ export interface MonthSummaryDto {
   differenceMinutes: number
   theoreticalToDateMinutes: number
   workedToDateMinutes: number
+  /** Suma de los redondeados de los días ya pasados (hoy cuenta si está fichado). */
+  roundedToDateMinutes: number
   differenceToDateMinutes: number
   openingBalanceMinutes: number
   closingBalanceMinutes: number
@@ -429,9 +431,11 @@ export interface ImportDayDto {
   messages: string[]
 }
 
+/** Ausencia deducida del Excel de la empresa (vacaciones) o escrita en un Excel exportado por la app. */
 export interface ImportAbsenceDto {
   date: IsoDate
   type: AbsenceType
+  halfDay: boolean
   action: ImportAction
   reason: string | null
 }

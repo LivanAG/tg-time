@@ -12,6 +12,7 @@ import com.controlhorario.common.calc.CalcIssue;
  * @param theoreticalMinutes      jornada de los laborables sin ausencia (C46); medio día = mitad
  * @param workedMinutes           trabajado real (C47)
  * @param roundedMinutes          suma de redondeados = round(trabajado)
+ * @param roundedToDateMinutes    suma de los redondeados de los días ya pasados (hoy cuenta si está fichado)
  * @param differenceMinutes       trabajado - teóricas, con signo (+ sobra, - falta)
  * @param theoreticalToDateMinutes teóricas de los días ya pasados (hoy cuenta si está fichado)
  * @param openingBalanceMinutes   saldo acumulado al empezar el mes
@@ -36,6 +37,7 @@ public record MonthSummary(
         int differenceMinutes,
         int theoreticalToDateMinutes,
         int workedToDateMinutes,
+        int roundedToDateMinutes,
         int differenceToDateMinutes,
         int openingBalanceMinutes,
         int closingBalanceMinutes,

@@ -52,7 +52,7 @@ describe('Importar el Excel', () => {
     ).toBeInTheDocument()
     expect(preview).toHaveTextContent('Periodo de destino: 2026-2027 (26/05/2026 – 25/05/2027)')
     expect(within(preview).getByText('Días a importar').nextElementSibling).toHaveTextContent('168')
-    expect(within(preview).getByText('Vacaciones a crear').nextElementSibling).toHaveTextContent('13')
+    expect(within(preview).getByText('Ausencias a crear').nextElementSibling).toHaveTextContent('13')
     expect(within(preview).getByText('Futuros descartados').nextElementSibling).toHaveTextContent('67')
     expect(
       within(preview).getByText('1 día con fichaje queda fuera del periodo «2026-2027»'),
@@ -71,7 +71,7 @@ describe('Importar el Excel', () => {
     expect(rows[1]).toHaveTextContent('Futuro')
     expect(rows[1]).toHaveTextContent('Se omite')
     expect(rows[1]).toHaveTextContent('Día futuro')
-    expect(preview).toHaveTextContent('Vacaciones deducidas (1)')
+    expect(preview).toHaveTextContent('Ausencias (1)')
 
     // Filtrar por estado.
     fireEvent.change(within(preview).getByLabelText('Filtrar por estado'), { target: { value: 'FUTURE' } })
@@ -91,10 +91,10 @@ describe('Importar el Excel', () => {
     )
     expect(formOf(callsTo('POST', '/api/import/xlsx')[1]).get('includeFuture')).toBe('true')
 
-    fireEvent.click(within(preview).getByRole('button', { name: /Confirmar: importar 235 días y 13 vacaciones/ }))
+    fireEvent.click(within(preview).getByRole('button', { name: /Confirmar: importar 235 días y 13 ausencias/ }))
 
     expect(await screen.findByText('Importación completada')).toBeInTheDocument()
-    expect(screen.getByText(/168 días importados y 13 días de vacaciones creados/)).toBeInTheDocument()
+    expect(screen.getByText(/168 días importados y 13 ausencias creadas/)).toBeInTheDocument()
     const uploads = callsTo('POST', '/api/import/xlsx')
     const confirmation = formOf(uploads[uploads.length - 1])
     expect(confirmation.get('file')).toBe(file)

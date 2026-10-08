@@ -10,10 +10,14 @@ import java.util.List;
  * @param rows            filas de datos cuya fecha calculada es de ese mes
  * @param dateCorrections filas cuya columna A tiene una fecha distinta de la calculada
  * @param days            filas con fichaje
+ * @param exported        hoja exportada por la app ({@link ExcelReportLayout}); si no, del Excel de la empresa
+ * @param absences        ausencias escritas en la hoja (solo en las exportadas por la app)
  */
-public record ParsedSheet(String name, YearMonth month, int rows, int dateCorrections, List<ParsedDay> days) {
+public record ParsedSheet(String name, YearMonth month, int rows, int dateCorrections, List<ParsedDay> days,
+        boolean exported, List<ParsedAbsence> absences) {
 
     public ParsedSheet {
         days = List.copyOf(days);
+        absences = List.copyOf(absences);
     }
 }

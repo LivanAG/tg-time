@@ -33,6 +33,7 @@ import com.controlhorario.calendar.HolidayRepository;
 import com.controlhorario.calendar.HolidayScope;
 import com.controlhorario.common.audit.AuditLog;
 import com.controlhorario.common.audit.AuditLogRepository;
+import com.controlhorario.common.calc.Minutes;
 import com.controlhorario.importexport.dto.DetectedSettingsDto;
 import com.controlhorario.importexport.dto.ImportAbsenceDto;
 import com.controlhorario.importexport.dto.ImportAction;
@@ -42,6 +43,7 @@ import com.controlhorario.importexport.dto.ImportDayDto;
 import com.controlhorario.importexport.dto.ImportDayStatus;
 import com.controlhorario.importexport.dto.ImportResultDto;
 import com.controlhorario.importexport.dto.ImportSheetDto;
+import com.controlhorario.importexport.excel.ExcelWorkbookReader;
 import com.controlhorario.importexport.excel.TestWorkbooks;
 import com.controlhorario.period.IntensiveRange;
 import com.controlhorario.period.IntensiveRangeRepository;
@@ -57,6 +59,7 @@ import com.controlhorario.workday.calc.WorkdayCalculator;
 import com.controlhorario.workday.calc.WorkdayInputs;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import org.apache.poi.ss.usermodel.Row;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -393,8 +396,12 @@ class ImportExportIT {
     @Test
     void exportedJuneReimportedByAnotherUserGivesTheSameWorkdays() throws Exception {
         User livan = newUser();
-        createExcelPeriod(livan);
+        WorkPeriod livanPeriod = createExcelPeriod(livan);
         upload(livan, xlsx(EXCEL), "dryRun", "false").andExpect(status().isOk());
+        Absence permit = new Absence(livan.getId(), livanPeriod.getId(), LocalDate.of(2026, 6, 12));
+        permit.setType(AbsenceType.PERMISO);
+        permit.setHalfDay(true);
+        absences.save(permit);
 
         MvcResult export = mvc.perform(get("/api/export/xlsx").param("year", "2026").param("month", "6")
                         .with(auth(livan)))
@@ -409,20 +416,109 @@ class ImportExportIT {
         ImportResultDto result = read(upload(other, new MockMultipartFile("file", "horas-2026-06.xlsx", XLSX, june),
                 "dryRun", "false").andExpect(status().isOk()));
 
+        LocalDate from = LocalDate.of(2026, 6, 1);
+        LocalDate to = LocalDate.of(2026, 6, 30);
+        List<String> originalAbsences = absencesOf(livan, from, to).stream()
+                .map(a -> a.getDate() + " " + a.getType() + " medio=" + a.isHalfDay())
+                .toList();
+        int vacations = originalAbsences.size();
+        assertThat(vacations).isPositive();
+
+        // La hoja exportada tiene todos los días del mes (30); con fichaje, 22.
         assertThat(result.sheets()).containsExactly(new ImportSheetDto("Junio 2026",
-                YearMonth.of(2026, 6), 22, 0));
+                YearMonth.of(2026, 6), 30, 0));
         // Sin fechas corregidas, ubicaciones vacías ni diferencias: solo el aviso de comida corta del 09/06.
         assertThat(result.days()).hasSize(22).allMatch(d -> d.status() == ImportDayStatus.NEW
                 && d.messages().stream().allMatch(m -> m.startsWith("La comida dura")));
-        assertThat(result.absences()).isEmpty();
-        assertThat(result.counts()).isEqualTo(new ImportCountsDto(22, 22, 0, 0, 0, 0, 0, 0, 0));
+        // Las vacaciones escritas en la columna Ausencia vuelven tal cual.
+        assertThat(result.absences()).hasSize(vacations).allMatch(a -> a.action() == ImportAction.IMPORT);
+        assertThat(result.counts()).isEqualTo(new ImportCountsDto(22, 22, 0, 0, 0, 0, 0, vacations, vacations));
 
-        LocalDate from = LocalDate.of(2026, 6, 1);
-        LocalDate to = LocalDate.of(2026, 6, 30);
         List<String> original = snapshot(workdaysOf(livan, from, to));
         List<String> reimported = snapshot(workdaysOf(other, from, to));
         assertThat(original).hasSize(22);
         assertThat(reimported).containsExactlyElementsOf(original);
+        assertThat(absencesOf(other, from, to)).extracting(a -> a.getDate() + " " + a.getType() + " medio="
+                + a.isHalfDay()).containsExactlyElementsOf(originalAbsences);
+
+        // Volver a subirlo no duplica nada: los días ya existen y las ausencias ya están registradas.
+        ImportResultDto again = read(upload(other, new MockMultipartFile("file", "horas-2026-06.xlsx", XLSX, june))
+                .andExpect(status().isOk()));
+        assertThat(again.counts().toImport()).isZero();
+        assertThat(again.absences()).allMatch(a -> a.action() == ImportAction.SKIP
+                && "Ya está registrada".equals(a.reason()));
+    }
+
+    @Test
+    void exportedPeriodHasTheSummaryAndEveryMonthAndComesBackWhole() throws Exception {
+        User livan = newUser();
+        WorkPeriod period = createExcelPeriod(livan);
+        upload(livan, xlsx(EXCEL), "dryRun", "false").andExpect(status().isOk());
+
+        // Sin periodId: el periodo seleccionado.
+        byte[] workbook = mvc.perform(get("/api/export/xlsx/period").with(auth(livan)))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Content-Type", XLSX))
+                .andExpect(header().string("Content-Disposition", "attachment; filename=\"horas-2026-2027.xlsx\""))
+                .andReturn().getResponse().getContentAsByteArray();
+        List<String> names = ExcelWorkbookReader.read(workbook, wb -> {
+            List<String> list = new ArrayList<>();
+            wb.forEach(sheet -> list.add(sheet.getSheetName()));
+            return list;
+        });
+        assertThat(names).hasSize(14).startsWith("Resumen", "Mayo 2026", "Junio 2026").endsWith("Mayo 2027");
+
+        User other = newUser();
+        createExcelPeriod(other);
+        ImportResultDto result = read(upload(other, new MockMultipartFile("file", "horas-2026-2027.xlsx", XLSX,
+                workbook), "dryRun", "false").andExpect(status().isOk()));
+
+        assertThat(result.sheets()).hasSize(13);
+        LocalDate from = period.getStartDate();
+        LocalDate to = period.getEndDate();
+        List<String> original = snapshot(workdaysOf(livan, from, to));
+        assertThat(original).isNotEmpty();
+        assertThat(snapshot(workdaysOf(other, from, to))).containsExactlyElementsOf(original);
+        assertThat(absencesOf(other, from, to)).extracting(a -> a.getDate() + " " + a.getType())
+                .containsExactlyElementsOf(absencesOf(livan, from, to).stream()
+                        .map(a -> a.getDate() + " " + a.getType()).toList());
+    }
+
+    @Test
+    void theMonthExportOpensWithTheBalanceAccumulatedUntilThen() throws Exception {
+        User livan = newUser();
+        createExcelPeriod(livan);
+        upload(livan, xlsx(EXCEL), "dryRun", "false").andExpect(status().isOk());
+
+        int opening = objectMapper.readTree(mvc.perform(get("/api/summary/month").param("year", "2026")
+                        .param("month", "7").with(auth(livan)))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsByteArray()).get("openingBalanceMinutes").asInt();
+        byte[] july = mvc.perform(get("/api/export/xlsx").param("year", "2026").param("month", "7")
+                        .with(auth(livan)))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsByteArray();
+
+        String written = ExcelWorkbookReader.read(july, wb -> {
+            for (Row row : wb.getSheetAt(0)) {
+                if (row.getCell(8) != null && "Saldo de apertura".equals(row.getCell(8).toString())) {
+                    return row.getCell(12).getStringCellValue();
+                }
+            }
+            return null;
+        });
+        assertThat(opening).isNotZero();
+        assertThat(written).isEqualTo((opening > 0 ? "+" : "") + Minutes.format(opening));
+    }
+
+    @Test
+    void periodExportNeedsAPeriodOfTheUser() throws Exception {
+        User user = newUser();
+        mvc.perform(get("/api/export/xlsx/period").with(auth(user))).andExpect(status().isBadRequest());
+
+        WorkPeriod foreign = createExcelPeriod(newUser());
+        mvc.perform(get("/api/export/xlsx/period").param("periodId", foreign.getId().toString()).with(auth(user)))
+                .andExpect(status().isNotFound());
     }
 
     @Test

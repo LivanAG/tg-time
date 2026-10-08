@@ -1,6 +1,7 @@
 package com.controlhorario.summary.calc;
 
 import java.time.LocalDate;
+import java.time.YearMonth;
 import java.util.List;
 
 import com.controlhorario.common.calc.CalcIssue;
@@ -39,4 +40,14 @@ public record PeriodSummary(
         int bridgeMinutes,
         List<MonthRow> months,
         List<CalcIssue> warnings) {
+
+    /** Saldo al empezar un mes: el acumulado del mes anterior, o el saldo inicial en el primer mes. */
+    public int openingBalanceAt(YearMonth month) {
+        YearMonth previous = month.minusMonths(1);
+        return months.stream()
+                .filter(row -> row.month().equals(previous))
+                .findFirst()
+                .map(MonthRow::cumulativeBalanceMinutes)
+                .orElse(openingBalanceMinutes);
+    }
 }

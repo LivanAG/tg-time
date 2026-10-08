@@ -123,12 +123,16 @@ public final class MonthSummaryService {
         List<Integer> roundedList = rounding.distribute(java.util.Arrays.stream(worked).boxed().toList());
         List<DaySummary> days = new ArrayList<>(n);
         int accumulatedWorked = 0;
+        int roundedToDate = 0;
         for (int i = 0; i < n; i++) {
             LocalDate date = dates.get(i);
             accumulatedWorked += worked[i];
             WorkdayInput workday = workdayByDate.get(date);
             AbsenceInput absence = absenceByDate.get(date);
             int rounded = roundedList.get(i);
+            if (isPast(date, workday != null, today)) {
+                roundedToDate += rounded;
+            }
             List<CalcIssue> warnings = new ArrayList<>();
             if (results[i] != null) {
                 warnings.addAll(results[i].warnings());
@@ -153,7 +157,8 @@ public final class MonthSummaryService {
         int roundedMinutes = rounding.round(workedMinutes);
         return new MonthSummary(month, status(month, today), workingDays, normalDays, intensiveDays, calendarMinutes,
                 theoreticalMinutes, vacationDays, vacationMinutes, bridgeDays, bridgeMinutes, workedMinutes,
-                roundedMinutes, difference, theoreticalToDate, workedToDate, differenceToDate, openingBalanceMinutes,
+                roundedMinutes, difference, theoreticalToDate, workedToDate, roundedToDate, differenceToDate,
+                openingBalanceMinutes,
                 openingBalanceMinutes + difference - bridgeMinutes, remoteMinutes, officeMinutes, remotePct, remoteDays,
                 List.copyOf(monthWarnings), weeks(days), List.copyOf(days));
     }

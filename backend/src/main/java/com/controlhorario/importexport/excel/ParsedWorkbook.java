@@ -36,4 +36,15 @@ public record ParsedWorkbook(
     public List<LocalDate> monthDates() {
         return months().stream().flatMap(m -> PeriodCalendar.datesOf(m).stream()).toList();
     }
+
+    /** Días de los meses de las hojas del Excel de la empresa (donde las vacaciones hay que deducirlas). */
+    public List<LocalDate> companyMonthDates() {
+        return sheets.stream().filter(s -> !s.exported()).map(ParsedSheet::month).distinct().sorted()
+                .flatMap(m -> PeriodCalendar.datesOf(m).stream()).toList();
+    }
+
+    /** Ausencias escritas en las hojas exportadas por la app. */
+    public List<ParsedAbsence> absences() {
+        return sheets.stream().flatMap(s -> s.absences().stream()).toList();
+    }
 }

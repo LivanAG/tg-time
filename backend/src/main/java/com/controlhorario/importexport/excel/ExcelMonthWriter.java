@@ -1,364 +1,373 @@
 package com.controlhorario.importexport.excel;
 
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.UncheckedIOException;
+import static com.controlhorario.importexport.excel.ExcelReportLayout.*;
+import static com.controlhorario.importexport.excel.ExcelSheets.*;
+import static com.controlhorario.importexport.excel.ExcelStyles.*;
+
 import java.time.LocalDate;
-import java.time.LocalTime;
 import java.time.YearMonth;
 import java.time.format.TextStyle;
-import java.util.Collection;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
+import java.util.stream.Collectors;
 
+import com.controlhorario.calendar.calc.DayType;
 import com.controlhorario.calendar.calc.PeriodRules;
 import com.controlhorario.common.calc.Minutes;
 import com.controlhorario.summary.calc.DaySummary;
 import com.controlhorario.summary.calc.MonthSummary;
+import com.controlhorario.summary.calc.WeekSummary;
 import com.controlhorario.workday.BreakType;
-import com.controlhorario.workday.Location;
 import com.controlhorario.workday.calc.BreakInput;
 import com.controlhorario.workday.calc.MixedTimes;
-import com.controlhorario.workday.calc.WorkdayCalculator;
 import com.controlhorario.workday.calc.WorkdayInput;
-import com.controlhorario.workday.calc.WorkdayResult;
 
-import org.apache.poi.ss.usermodel.BorderStyle;
 import org.apache.poi.ss.usermodel.Cell;
-import org.apache.poi.ss.usermodel.CellStyle;
-import org.apache.poi.ss.usermodel.FillPatternType;
-import org.apache.poi.ss.usermodel.Font;
-import org.apache.poi.ss.usermodel.HorizontalAlignment;
-import org.apache.poi.ss.usermodel.IndexedColors;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.util.CellRangeAddress;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
 /**
- * Genera una hoja mensual con el diseño del Excel original (docs/EXCEL.md), de forma que se pueda
- * volver a importar: cabecera F1-F3, J1/J2 y L1/L2; filas 7-39 por la misma rejilla; columnas B-I,
- * M y N/O con los datos; J/K/L/P con los valores calculados (no fórmulas); subtotales
- * semanales en las filas 12, 19, 26, 33 y 40; pie con teóricas (C46), hechas (C47), faltan (C48),
- * sobran (C49) y vacaciones (C53).
+ * Hoja mensual con el diseño de la app ({@link ExcelReportLayout}, docs/EXCEL.md): pensada para leerse e
+ * imprimirse y que {@link ExcelReportParser} pueda volver a importar. Todos los días del mes (fines de
+ * semana, festivos y ausencias rotulados), los tramos de oficina y de casa en sus columnas, el total y el
+ * redondeado juntos, subtotales por semana, total del mes y resumen. Valores calculados, sin fórmulas.
  */
 public final class ExcelMonthWriter {
 
     /**
      * Datos de un mes.
      *
-     * @param summary  resumen del mes (MonthSummaryService): L, P, subtotales y pie
-     * @param workdays fichajes del mes (también los que caen fuera del periodo del resumen)
+     * @param periodName nombre y fechas del periodo, p. ej. "2026-2027 (26/05/2026 – 25/05/2027)"
+     * @param summary    resumen del mes (MonthSummaryService): días, totales, subtotales y saldos
+     * @param notes      notas de cada día con fichaje
      */
-    public record MonthData(String userName, String company, PeriodRules rules, MonthSummary summary,
-            Collection<WorkdayInput> workdays) {
+    public record MonthData(String userName, String company, String periodName, PeriodRules rules,
+            MonthSummary summary, Map<LocalDate, String> notes) {
     }
 
-    private static final Locale SPANISH = Locale.forLanguageTag("es-ES");
-    private static final String[] HEADERS = {
-        "Día", "ENTRADA", "Salida Desay", "Entrada Desay", "Salida Comida", "Entrada Comida", "Hora Salida",
-        "Hora Entrada", "SALIDA", "Total Comida", "Total Desayuno", "Total Día", "Ubic", "Inicio casa", "Fin casa",
-        "Redondeado"
-    };
+    /** Anchos de columna A-P, en caracteres. */
+    private static final int[] WIDTHS = {12, 11, 11, 27, 9, 9, 9, 9, 9, 9, 9, 9, 24, 9, 12, 40};
+    private static final float ROW_HEIGHT = 17;
+    private static final float LINE_HEIGHT = 13;
 
-    /** Estilos del libro (se crean una vez: Excel limita el número de estilos). */
-    private static final class Styles {
-        final CellStyle bold;
-        final CellStyle header;
-        final CellStyle date;
-        final CellStyle time;
-        final CellStyle total;
-        final CellStyle totalBold;
-        final CellStyle center;
-        final CellStyle number;
-
-        Styles(XSSFWorkbook workbook) {
-            Font boldFont = workbook.createFont();
-            boldFont.setBold(true);
-            short timeFormat = workbook.createDataFormat().getFormat("h:mm");
-            short totalFormat = workbook.createDataFormat().getFormat("[h]:mm");
-
-            bold = workbook.createCellStyle();
-            bold.setFont(boldFont);
-
-            header = workbook.createCellStyle();
-            header.setFont(boldFont);
-            header.setAlignment(HorizontalAlignment.CENTER);
-            header.setWrapText(true);
-            header.setFillForegroundColor(IndexedColors.GREY_25_PERCENT.getIndex());
-            header.setFillPattern(FillPatternType.SOLID_FOREGROUND);
-            header.setBorderBottom(BorderStyle.THIN);
-
-            date = workbook.createCellStyle();
-            date.setDataFormat(workbook.createDataFormat().getFormat("dd/mm/yyyy"));
-
-            time = workbook.createCellStyle();
-            time.setDataFormat(timeFormat);
-            time.setAlignment(HorizontalAlignment.CENTER);
-
-            total = workbook.createCellStyle();
-            total.setDataFormat(totalFormat);
-            total.setAlignment(HorizontalAlignment.CENTER);
-
-            totalBold = workbook.createCellStyle();
-            totalBold.setDataFormat(totalFormat);
-            totalBold.setAlignment(HorizontalAlignment.CENTER);
-            totalBold.setFont(boldFont);
-
-            center = workbook.createCellStyle();
-            center.setAlignment(HorizontalAlignment.CENTER);
-
-            number = workbook.createCellStyle();
-            number.setDataFormat(workbook.createDataFormat().getFormat("0.#"));
-            number.setAlignment(HorizontalAlignment.LEFT);
-        }
-    }
-
+    /** Libro con la hoja del mes. */
     public byte[] write(MonthData data) {
-        try (XSSFWorkbook workbook = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
-            Styles styles = new Styles(workbook);
-            YearMonth month = data.summary().month();
-            Sheet sheet = workbook.createSheet(sheetName(month));
-            writeHeader(sheet, styles, data, month);
-            writeDays(sheet, styles, data, month);
-            writeFooter(sheet, styles, data.summary());
-            setColumnWidths(sheet);
-            sheet.createFreezePane(1, 6);
-            workbook.write(out);
-            return out.toByteArray();
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
+        return workbook((workbook, styles) -> addSheet(workbook, styles, data));
+    }
+
+    /** Añade la hoja del mes ({@link #sheetName}) a un libro. */
+    void addSheet(XSSFWorkbook workbook, ExcelStyles styles, MonthData data) {
+        YearMonth month = data.summary().month();
+        Sheet sheet = workbook.createSheet(sheetName(month));
+        writeHeader(sheet, styles, "Registro de jornada · " + capitalize(month.getMonth()
+                .getDisplayName(TextStyle.FULL, SPANISH)) + " de " + month.getYear(), data.userName(), data.company(),
+                data.periodName(), data.rules());
+        writeTableHeader(sheet, styles);
+        int next = writeDays(sheet, styles, data);
+        next = writeTotal(sheet, styles, data.summary(), next);
+        writeSummary(sheet, styles, data.summary(), data.rules(), next + 1);
+        setColumnWidths(sheet, WIDTHS);
+        // Solo la cabecera queda fija (sin línea vertical entre columnas); al imprimir, el resumen en otra página.
+        sheet.createFreezePane(0, FIRST_DATA_ROW);
+        sheet.setRowBreak(next - 1);
+        setUpPrint(sheet, (short) 0);
     }
 
     /** "Junio 2026". */
     public static String sheetName(YearMonth month) {
-        String name = month.getMonth().getDisplayName(TextStyle.FULL, SPANISH);
-        return Character.toUpperCase(name.charAt(0)) + name.substring(1) + " " + month.getYear();
+        return monthName(month);
     }
 
-    private static void writeHeader(Sheet sheet, Styles styles, MonthData data, YearMonth month) {
-        PeriodRules rules = data.rules();
+    // ------------------------------------------------------------------ cabecera de la tabla
+
+    private static void writeTableHeader(Sheet sheet, ExcelStyles styles) {
+        Row group = row(sheet, GROUP_HEADER_ROW);
+        Row sub = row(sheet, HEADER_ROW);
+        group.setHeightInPoints(20);
+        sub.setHeightInPoints(18);
+        for (int c = 0; c <= LAST_COL; c++) {
+            text(group, c, null, styles.header());
+            text(sub, c, null, styles.header());
+        }
+        String[][] single = {
+            {"0", HEADER_DATE}, {"1", "Día"}, {"2", "Ubicación"}, {"3", "Ausencia"},
+            {"12", "Otras pausas"}, {"13", "Total"}, {"14", "Redondeado"}, {"15", "Notas"}};
+        for (String[] h : single) {
+            int c = Integer.parseInt(h[0]);
+            text(group, c, h[1], styles.header());
+            sheet.addMergedRegion(new CellRangeAddress(GROUP_HEADER_ROW, HEADER_ROW, c, c));
+        }
+        String[][] pairs = {
+            {"4", HEADER_OFFICE, "Entrada", "Salida"}, {"6", HEADER_HOME, "Entrada", "Salida"},
+            {"8", "Desayuno", "Inicio", "Fin"}, {"10", "Comida", "Inicio", "Fin"}};
+        for (String[] h : pairs) {
+            int c = Integer.parseInt(h[0]);
+            text(group, c, h[1], styles.header());
+            sheet.addMergedRegion(new CellRangeAddress(GROUP_HEADER_ROW, GROUP_HEADER_ROW, c, c + 1));
+            text(sub, c, h[2], styles.header());
+            text(sub, c + 1, h[3], styles.header());
+        }
+    }
+
+    // ------------------------------------------------------------------ días
+
+    /** Escribe los días y los subtotales semanales; devuelve la siguiente fila libre. */
+    private static int writeDays(Sheet sheet, ExcelStyles styles, MonthData data) {
         MonthSummary summary = data.summary();
-        Row r1 = row(sheet, 1);
-        Row r2 = row(sheet, 2);
-        Row r3 = row(sheet, 3);
-
-        text(r1, 0, "Empresa:", styles.bold);
-        text(r1, 1, data.company(), null);
-        text(r2, 0, "Nombre:", styles.bold);
-        text(r2, 1, data.userName(), null);
-        text(r3, 0, "Mes:", styles.bold);
-        Cell monthCell = r3.createCell(1);
-        monthCell.setCellValue(month.atDay(1));
-        monthCell.setCellStyle(styles.date);
-
-        text(r1, 4, "Tiempo min comida", styles.bold);
-        duration(r1, 5, rules.minLunchMin(), styles.time);
-        text(r2, 4, "Tiempo desayuno", styles.bold);
-        duration(r2, 5, rules.breakfastToleranceMin(), styles.time);
-        text(r3, 4, "% R.Domic.", styles.bold);
-        number(r3, 5, rules.maxRemotePct(), null);
-
-        // Como en el original: J = días y horas de la jornada principal; L solo en los meses mixtos.
-        boolean mixed = summary.normalDays() > 0 && summary.intensiveDays() > 0;
-        boolean onlyIntensive = summary.normalDays() == 0 && summary.intensiveDays() > 0;
-        text(r1, 8, "Dias Mes:", styles.bold);
-        number(r1, 9, onlyIntensive ? summary.intensiveDays() : summary.normalDays(), null);
-        text(r2, 8, "Horas / Día:", styles.bold);
-        duration(r2, 9, onlyIntensive ? rules.intensiveDayMinutes() : rules.normalDayMinutes(), styles.time);
-        if (mixed) {
-            text(r1, 10, "Dias Mes:", styles.bold);
-            number(r1, 11, summary.intensiveDays(), null);
-            text(r2, 10, "Horas / Día:", styles.bold);
-            duration(r2, 11, rules.intensiveDayMinutes(), styles.time);
+        Map<LocalDate, WeekSummary> weekByEnd = summary.weeks().stream()
+                .collect(Collectors.toMap(WeekSummary::weekEnd, w -> w));
+        int r = FIRST_DATA_ROW;
+        for (DaySummary day : summary.days()) {
+            writeDay(row(sheet, r++), styles, day, data.notes().get(day.date()));
+            WeekSummary week = weekByEnd.get(day.date());
+            if (week != null) {
+                writeWeek(sheet, row(sheet, r), styles, week);
+                r++;
+            }
         }
+        return r;
+    }
 
-        text(row(sheet, 4), ExcelLayout.COL_REMOTE_START, "Teletrabajo tardes MIXTO", styles.bold);
-        Row headerRow = row(sheet, 5);
-        for (int c = 0; c < HEADERS.length; c++) {
-            text(headerRow, c, HEADERS[c], styles.header);
+    private static void writeDay(Row row, ExcelStyles styles, DaySummary day, String notes) {
+        row.setHeightInPoints(ROW_HEIGHT);
+        WorkdayInput workday = day.workday();
+        Fill fill = fillOf(day);
+        for (int c = 0; c <= LAST_COL; c++) {
+            text(row, c, null, styles.cell(kindOf(c), fill, false));
+        }
+        Cell date = row.getCell(COL_DATE);
+        date.setCellValue(day.date());
+        text(row, COL_WEEKDAY, capitalize(day.date().getDayOfWeek().getDisplayName(TextStyle.FULL, SPANISH)), null);
+        if (day.absence() != null) {
+            text(row, COL_ABSENCE, absenceLabel(day.absence().type(), day.absence().halfDay()), null);
+        }
+        if (workday == null) {
+            text(row, COL_LOCATION, dayLabel(day), null);
+            return;
+        }
+        text(row, COL_LOCATION, LOCATION_LABELS.get(workday.location()), null);
+        switch (workday.location()) {
+            case OFICINA -> {
+                time(row, COL_OFFICE_START, workday.start());
+                time(row, COL_OFFICE_END, workday.end());
+            }
+            case CASA -> {
+                time(row, COL_HOME_START, workday.start());
+                time(row, COL_HOME_END, workday.end());
+            }
+            case MIXTO -> {
+                MixedTimes m = workday.mixed();
+                time(row, COL_OFFICE_START, m.officeStart());
+                time(row, COL_OFFICE_END, m.officeEnd());
+                time(row, COL_HOME_START, m.homeStart());
+                time(row, COL_HOME_END, m.homeEnd());
+            }
+        }
+        writeBreak(row, workday.breaks(), BreakType.DESAYUNO, COL_BREAKFAST_START);
+        writeBreak(row, workday.breaks(), BreakType.COMIDA, COL_LUNCH_START);
+        String others = workday.breaks().stream()
+                .filter(b -> b.type() == BreakType.OTRA)
+                .map(b -> hhmm(b.start()) + "–" + hhmm(b.end()))
+                .collect(Collectors.joining(", "));
+        if (!others.isEmpty()) {
+            text(row, COL_OTHER_BREAKS, others, null);
+        }
+        if (day.result() != null) {
+            minutes(row, COL_WORKED, day.workedMinutes(), null);
+            minutes(row, COL_ROUNDED, day.roundedMinutes(), null);
+        }
+        if (notes != null && !notes.isBlank()) {
+            text(row, COL_NOTES, notes, null);
+        }
+        // Excel no ajusta solo la altura de una fila con alto fijo: se calcula para que quepan pausas y notas.
+        int lines = Math.max(lines(others, COL_OTHER_BREAKS), lines(notes, COL_NOTES));
+        if (lines > 1) {
+            row.setHeightInPoints(LINE_HEIGHT * lines + 4);
         }
     }
 
-    private static void writeDays(Sheet sheet, Styles styles, MonthData data, YearMonth month) {
-        PeriodRules rules = data.rules();
-        WorkdayCalculator calculator = new WorkdayCalculator(rules.breakfastToleranceMin(), rules.minLunchMin());
-        Map<LocalDate, DaySummary> days = new HashMap<>();
-        for (DaySummary day : data.summary().days()) {
-            days.put(day.date(), day);
+    /** Líneas que ocupa un texto con ajuste en una columna (aprox.: ~1,1 caracteres por unidad de ancho). */
+    static int lines(String text, int column) {
+        if (text == null || text.isBlank()) {
+            return 1;
         }
-        Map<LocalDate, WorkdayInput> workdays = new HashMap<>();
-        for (WorkdayInput w : data.workdays()) {
-            if (YearMonth.from(w.date()).equals(month)) {
-                workdays.put(w.date(), w);
-            }
-        }
-
-        for (int r : ExcelLayout.dataRows()) {
-            LocalDate date = ExcelLayout.dateOf(month, r);
-            if (!YearMonth.from(date).equals(month)) {
-                continue;
-            }
-            Row row = row(sheet, r);
-            Cell dateCell = row.createCell(ExcelLayout.COL_DATE);
-            dateCell.setCellValue(date);
-            dateCell.setCellStyle(styles.date);
-
-            WorkdayInput workday = workdays.get(date);
-            if (workday == null) {
-                continue;
-            }
-            DaySummary day = days.get(date);
-            WorkdayResult result = day != null && day.result() != null ? day.result()
-                    : calculator.validate(workday).isEmpty() ? calculator.calculate(workday) : null;
-
-            time(row, ExcelLayout.COL_START, workday.start(), styles.time);
-            time(row, ExcelLayout.COL_END, workday.end(), styles.time);
-            writeBreak(row, workday.breaks(), BreakType.DESAYUNO, ExcelLayout.COL_BREAKFAST_START, styles);
-            writeBreak(row, workday.breaks(), BreakType.COMIDA, ExcelLayout.COL_LUNCH_START, styles);
-            writeBreak(row, workday.breaks(), BreakType.OTRA, ExcelLayout.COL_OTHER_START, styles);
-            writeMixedGap(row, workday, styles);
-            if (result != null) {
-                duration(row, ExcelLayout.COL_LUNCH_TOTAL, result.lunchDeductedMinutes(), styles.time);
-                duration(row, ExcelLayout.COL_BREAKFAST_DEDUCTED, result.breakfastDeductedMinutes(), styles.time);
-                duration(row, ExcelLayout.COL_WORKED, result.workedMinutes(), styles.time);
-            }
-            if (day != null && day.result() != null) {
-                duration(row, ExcelLayout.COL_ROUNDED, day.roundedMinutes(), styles.time);
-            }
-            text(row, ExcelLayout.COL_LOCATION, locationCode(workday.location()), styles.center);
-            if (workday.mixed() != null) {
-                time(row, ExcelLayout.COL_REMOTE_START, workday.mixed().homeStart(), styles.time);
-                time(row, ExcelLayout.COL_REMOTE_END, workday.mixed().homeEnd(), styles.time);
-            }
-        }
-
-        // Subtotales por semana de la rejilla (incluye el fin de semana, por si se trabajó).
-        LocalDate gridStart = ExcelLayout.gridStart(month);
-        for (int week = 0; week < ExcelLayout.WEEKS; week++) {
-            LocalDate from = gridStart.plusDays(7L * week);
-            int worked = 0;
-            int rounded = 0;
-            for (int d = 0; d < 7; d++) {
-                DaySummary day = days.get(from.plusDays(d));
-                if (day != null) {
-                    worked += day.workedMinutes();
-                    rounded += day.roundedMinutes();
+        int perLine = (int) (WIDTHS[column] * 1.1);
+        int lines = 0;
+        for (String paragraph : text.strip().split("\\R")) {
+            lines++;
+            int used = 0;
+            for (String word : paragraph.split(" ")) {
+                int length = word.length();
+                if (used > 0 && used + 1 + length > perLine) {
+                    lines++;
+                    used = 0;
+                }
+                used += (used > 0 ? 1 : 0) + length;
+                for (; used > perLine; used -= perLine) {
+                    lines++;
                 }
             }
-            Row row = row(sheet, ExcelLayout.subtotalRow(week));
-            text(row, ExcelLayout.COL_DATE, "Semana " + (week + 1), styles.bold);
-            duration(row, ExcelLayout.COL_WORKED, worked, styles.totalBold);
-            duration(row, ExcelLayout.COL_ROUNDED, rounded, styles.totalBold);
+        }
+        return lines;
+    }
+
+    private static void writeWeek(Sheet sheet, Row row, ExcelStyles styles, WeekSummary week) {
+        row.setHeightInPoints(ROW_HEIGHT);
+        for (int c = 0; c <= LAST_COL; c++) {
+            Kind kind = c == COL_WORKED || c == COL_ROUNDED ? Kind.DURATION : Kind.TEXT;
+            text(row, c, null, styles.cell(kind, Fill.SUBTOTAL, true));
+        }
+        int difference = week.workedMinutes() - week.theoreticalMinutes();
+        text(row, COL_DATE, "Semana " + shortDate(week.weekStart()) + " – " + shortDate(week.weekEnd())
+                + "  ·  teóricas " + Minutes.format(week.theoreticalMinutes())
+                + "  ·  diferencia " + signed(difference), null);
+        sheet.addMergedRegion(new CellRangeAddress(row.getRowNum(), row.getRowNum(), COL_DATE, COL_OTHER_BREAKS));
+        minutes(row, COL_WORKED, week.workedMinutes(), null);
+        minutes(row, COL_ROUNDED, week.roundedMinutes(), null);
+    }
+
+    private static int writeTotal(Sheet sheet, ExcelStyles styles, MonthSummary summary, int r) {
+        Row row = row(sheet, r);
+        row.setHeightInPoints(20);
+        for (int c = 0; c <= LAST_COL; c++) {
+            Kind kind = c == COL_WORKED || c == COL_ROUNDED ? Kind.DURATION : Kind.TEXT;
+            text(row, c, null, styles.cell(kind, Fill.TOTAL, true));
+        }
+        text(row, COL_DATE, TOTAL_LABEL, null);
+        sheet.addMergedRegion(new CellRangeAddress(r, r, COL_DATE, COL_OTHER_BREAKS));
+        minutes(row, COL_WORKED, summary.workedMinutes(), null);
+        minutes(row, COL_ROUNDED, summary.roundedMinutes(), null);
+        return r + 1;
+    }
+
+    // ------------------------------------------------------------------ resumen
+
+    /*
+     * Cuatro bloques, como el cierre del mes de la app. A la izquierda Horas y Ausencias (etiqueta A:C,
+     * valores en D y E:F); a la derecha Saldo y Teletrabajo (etiqueta I:L, valor en M).
+     */
+    private static final int LEFT_LABEL = COL_DATE;
+    private static final int LEFT_LABEL_END = COL_LOCATION;
+    private static final int LEFT_VALUE = COL_ABSENCE;
+    private static final int LEFT_VALUE_2 = COL_OFFICE_START;
+    private static final int LEFT_VALUE_2_END = COL_OFFICE_END;
+    private static final int RIGHT_LABEL = COL_BREAKFAST_START;
+    private static final int RIGHT_LABEL_END = COL_LUNCH_END;
+    private static final int RIGHT_VALUE = COL_OTHER_BREAKS;
+
+    private static void writeSummary(Sheet sheet, ExcelStyles styles, MonthSummary s, PeriodRules rules,
+            int start) {
+        Row title = row(sheet, start);
+        title.setHeightInPoints(24);
+        text(title, COL_DATE, "Resumen del mes", styles.plain(true, 13, NAVY));
+
+        int r = start + 1;
+        boxRow(sheet, styles, r, true, false, "Horas", Value.text("Mes completo"), Value.text("Hasta hoy"));
+        boxRow(sheet, styles, r + 1, false, false, "Teóricas", Value.duration(s.theoreticalMinutes()),
+                Value.duration(s.theoreticalToDateMinutes()));
+        boxRow(sheet, styles, r + 2, false, false, "Hechas sin redondear", Value.duration(s.workedMinutes()),
+                Value.duration(s.workedToDateMinutes()));
+        boxRow(sheet, styles, r + 3, false, false, "Hechas redondeadas", Value.duration(s.roundedMinutes()),
+                Value.duration(s.roundedToDateMinutes()));
+        boxRow(sheet, styles, r + 4, false, true, "Diferencia", Value.signed(s.differenceMinutes()),
+                Value.signed(s.differenceToDateMinutes()));
+
+        boxRow(sheet, styles, r, true, false, "Saldo", Value.text(""));
+        boxRow(sheet, styles, r + 1, false, false, "Saldo de apertura", Value.signed(s.openingBalanceMinutes()));
+        boxRow(sheet, styles, r + 2, false, false, "+ Diferencia del mes", Value.signed(s.differenceMinutes()));
+        boxRow(sheet, styles, r + 3, false, false, "− Puentes a recuperar (" + days(s.bridgeDays()) + ")",
+                Value.duration(s.bridgeMinutes()));
+        boxRow(sheet, styles, r + 4, false, true, "= Saldo de cierre", Value.signed(s.closingBalanceMinutes()));
+
+        r += 6;
+        boxRow(sheet, styles, r, true, false, "Ausencias", Value.text("Días"), Value.text("Horas"));
+        boxRow(sheet, styles, r + 1, false, false, "Vacaciones", Value.text(days(s.vacationDays())),
+                Value.duration(s.vacationMinutes()));
+        boxRow(sheet, styles, r + 2, false, false, "Puentes a recuperar", Value.text(days(s.bridgeDays())),
+                Value.duration(s.bridgeMinutes()));
+
+        boolean exceeded = s.remotePct() > rules.maxRemotePct();
+        boxRow(sheet, styles, r, true, false, "Teletrabajo", Value.text(""));
+        boxRow(sheet, styles, r + 1, false, false, "En casa", Value.duration(s.remoteMinutes()));
+        boxRow(sheet, styles, r + 2, false, false, "En oficina", Value.duration(s.officeMinutes()));
+        boxRow(sheet, styles, r + 3, false, false, "Días en casa o mixto", Value.text(String.valueOf(s.remoteDays())));
+        boxRow(sheet, styles, r + 4, false, exceeded, "Porcentaje en casa",
+                new Value(Math.round(s.remotePct() * 10) / 10.0, Format.PERCENT_1, exceeded ? NEGATIVE : null));
+        boxRow(sheet, styles, r + 5, false, false, "Máximo permitido",
+                new Value((double) rules.maxRemotePct(), Format.PERCENT, null));
+
+        int noteRow = r + 7;
+        Row note = row(sheet, noteRow);
+        note.setHeightInPoints(28);
+        text(note, COL_DATE, s.workingDays() + " días laborables (" + s.normalDays() + " a jornada normal, "
+                + s.intensiveDays() + " a intensiva): " + Minutes.format(s.calendarMinutes()) + " de jornada. "
+                + "La diferencia y el saldo se calculan con las horas sin redondear; el redondeado (tramos de "
+                + rules.roundingStepMin() + " min) es lo que se imputa. «Hasta hoy» cuenta los días ya pasados.",
+                styles.footnote());
+        sheet.addMergedRegion(new CellRangeAddress(noteRow, noteRow, COL_DATE, COL_NOTES));
+    }
+
+    /**
+     * Fila de un bloque del resumen: con dos valores es un bloque de la izquierda (Horas, Ausencias) y con
+     * uno, de la derecha (Saldo, Teletrabajo).
+     */
+    private static void boxRow(Sheet sheet, ExcelStyles styles, int r, boolean head, boolean bold, String label,
+            Value... values) {
+        Row row = row(sheet, r);
+        row.setHeightInPoints(ROW_HEIGHT);
+        if (values.length == 2) {
+            boxLabel(sheet, styles, row, LEFT_LABEL, LEFT_LABEL_END, head, bold, label);
+            boxValue(sheet, styles, row, LEFT_VALUE, LEFT_VALUE, head, bold, values[0]);
+            boxValue(sheet, styles, row, LEFT_VALUE_2, LEFT_VALUE_2_END, head, bold, values[1]);
+        } else {
+            boxLabel(sheet, styles, row, RIGHT_LABEL, RIGHT_LABEL_END, head, bold, label);
+            boxValue(sheet, styles, row, RIGHT_VALUE, RIGHT_VALUE, head, bold, values[0]);
         }
     }
 
-    private static void writeFooter(Sheet sheet, Styles styles, MonthSummary summary) {
-        int rounded = summary.days().stream().mapToInt(DaySummary::roundedMinutes).sum();
-        Row total = row(sheet, ExcelLayout.TOTAL_ROW);
-        text(total, ExcelLayout.COL_DATE, "Total Mes", styles.bold);
-        duration(total, ExcelLayout.COL_WORKED, summary.workedMinutes(), styles.totalBold);
-        duration(total, ExcelLayout.COL_ROUNDED, rounded, styles.totalBold);
+    // ------------------------------------------------------------------ utilidades
 
-        int theoretical = summary.theoreticalMinutes();
-        int worked = summary.workedMinutes();
-        Row r46 = row(sheet, 46);
-        text(r46, 0, "HORAS TOTAL MES:", styles.bold);
-        duration(r46, 2, theoretical, styles.total);
-        Row r47 = row(sheet, 47);
-        text(r47, 1, "Hechas:", styles.bold);
-        duration(r47, 2, worked, styles.total);
-        Row r48 = row(sheet, 48);
-        text(r48, 1, "Faltan:", styles.bold);
-        duration(r48, 2, Math.max(0, theoretical - worked), styles.total);
-        Row r49 = row(sheet, 49);
-        text(r49, 1, "Sobran:", styles.bold);
-        duration(r49, 2, Math.max(0, worked - theoretical), styles.total);
-        Row r53 = row(sheet, 53);
-        text(r53, 0, "Vacaciones:", styles.bold);
-        Cell vacations = r53.createCell(2);
-        vacations.setCellValue(summary.vacationDays());
-        vacations.setCellStyle(styles.number);
+    private static Fill fillOf(DaySummary day) {
+        if (day.workday() != null) {
+            return Fill.NONE;
+        }
+        if (day.dayType() == DayType.FESTIVO) {
+            return Fill.HOLIDAY;
+        }
+        if (day.dayType() != DayType.LABORABLE) {
+            return Fill.WEEKEND;
+        }
+        return day.absence() != null && !day.absence().halfDay() ? Fill.ABSENCE : Fill.NONE;
     }
 
-    private static void writeBreak(Row row, List<BreakInput> breaks, BreakType type, int startColumn, Styles styles) {
+    private static Kind kindOf(int column) {
+        return switch (column) {
+            case COL_DATE -> Kind.DATE;
+            case COL_WEEKDAY, COL_LOCATION, COL_ABSENCE -> Kind.TEXT;
+            case COL_WORKED, COL_ROUNDED -> Kind.DURATION;
+            case COL_OTHER_BREAKS, COL_NOTES -> Kind.WRAP;
+            default -> Kind.TIME;
+        };
+    }
+
+    private static String dayLabel(DaySummary day) {
+        return switch (day.dayType()) {
+            case FIN_DE_SEMANA -> "Fin de semana";
+            case FESTIVO -> day.holidayName() == null ? "Festivo" : "Festivo: " + day.holidayName();
+            case FUERA_DE_PERIODO -> "Fuera del periodo";
+            case LABORABLE -> null;
+        };
+    }
+
+    private static void writeBreak(Row row, List<BreakInput> breaks, BreakType type, int startColumn) {
         breaks.stream()
                 .filter(b -> b.type() == type)
                 .findFirst()
                 .ifPresent(b -> {
-                    time(row, startColumn, b.start(), styles.time);
-                    time(row, startColumn + 1, b.end(), styles.time);
+                    time(row, startColumn, b.start());
+                    time(row, startColumn + 1, b.end());
                 });
-    }
-
-    /**
-     * El hueco entre los tramos de un día mixto no se trabaja: en el Excel (L = I - B - pausas) va como
-     * "otra pausa" (G/H) si está libre, y la importación lo reconoce al lado del tramo en casa (N/O).
-     */
-    private static void writeMixedGap(Row row, WorkdayInput workday, Styles styles) {
-        MixedTimes m = workday.mixed();
-        if (m == null || workday.breaks().stream().anyMatch(b -> b.type() == BreakType.OTRA)) {
-            return;
-        }
-        boolean homeLast = m.homeStart().isAfter(m.officeStart());
-        LocalTime gapStart = homeLast ? m.officeEnd() : m.homeEnd();
-        LocalTime gapEnd = homeLast ? m.homeStart() : m.officeStart();
-        if (gapEnd.isAfter(gapStart)) {
-            time(row, ExcelLayout.COL_OTHER_START, gapStart, styles.time);
-            time(row, ExcelLayout.COL_OTHER_START + 1, gapEnd, styles.time);
-        }
-    }
-
-    private static String locationCode(Location location) {
-        return switch (location) {
-            case OFICINA -> "O";
-            case CASA -> "C";
-            case MIXTO -> "M";
-        };
-    }
-
-    private static void setColumnWidths(Sheet sheet) {
-        sheet.setColumnWidth(ExcelLayout.COL_DATE, 12 * 256);
-        for (int c = ExcelLayout.COL_START; c <= ExcelLayout.COL_ROUNDED; c++) {
-            sheet.setColumnWidth(c, 10 * 256);
-        }
-    }
-
-    /** Fila en numeración de Excel (base 1). */
-    private static Row row(Sheet sheet, int excelRow) {
-        Row row = sheet.getRow(excelRow - 1);
-        return row != null ? row : sheet.createRow(excelRow - 1);
-    }
-
-    private static void text(Row row, int column, String value, CellStyle style) {
-        if (value == null) {
-            return;
-        }
-        Cell cell = row.createCell(column);
-        cell.setCellValue(value);
-        if (style != null) {
-            cell.setCellStyle(style);
-        }
-    }
-
-    private static void number(Row row, int column, int value, CellStyle style) {
-        Cell cell = row.createCell(column);
-        cell.setCellValue(value);
-        if (style != null) {
-            cell.setCellStyle(style);
-        }
-    }
-
-    private static void time(Row row, int column, LocalTime value, CellStyle style) {
-        duration(row, column, Minutes.of(value), style);
-    }
-
-    /** Duraciones y horas como fracción de día, igual que Excel. */
-    private static void duration(Row row, int column, int minutes, CellStyle style) {
-        Cell cell = row.createCell(column);
-        cell.setCellValue(minutes / (double) ExcelCells.MINUTES_PER_DAY);
-        cell.setCellStyle(style);
     }
 }

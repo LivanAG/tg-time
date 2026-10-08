@@ -19,7 +19,7 @@ import {
 } from '../../components/ui'
 import { useSelectedPeriod } from '../../hooks/usePeriods'
 import { formatDate } from '../../lib/dates'
-import { ABSENCE_LABELS, IMPORT_STATUS_LABELS } from '../../lib/format'
+import { absenceLabel, IMPORT_STATUS_LABELS } from '../../lib/format'
 import { formatMinutes, formatOptionalMinutes } from '../../lib/time'
 import { breaksSummary, timesSummary } from '../record/dayInfo'
 
@@ -119,14 +119,14 @@ export function ImportSection() {
     <Card title="Importar el Excel" titleId="settings-import">
       <div className="space-y-4">
         <p className="text-sm text-slate-600">
-          Sube tu HORAS_IZERTIS (.xlsx, máximo 2 MB). Primero verás una vista previa; no se guarda nada hasta que
-          confirmes.
+          Sube tu HORAS_IZERTIS o un Excel exportado por la app (.xlsx, máximo 2 MB). Primero verás una vista
+          previa; no se guarda nada hasta que confirmes.
         </p>
         {done && (
           <Alert tone="success" title="Importación completada">
             {done.counts.imported} {done.counts.imported === 1 ? 'día importado' : 'días importados'} y{' '}
             {done.counts.vacationsCreated}{' '}
-            {done.counts.vacationsCreated === 1 ? 'día de vacaciones creado' : 'días de vacaciones creados'}.{' '}
+            {done.counts.vacationsCreated === 1 ? 'ausencia creada' : 'ausencias creadas'}.{' '}
             <Link to="/" className="font-medium underline">
               Ver el inicio
             </Link>
@@ -252,7 +252,7 @@ function ImportPreview({ result, periods, refreshing, confirming, confirmError, 
 
       <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Count label="Días a importar" value={counts.toImport} strong />
-        <Count label="Vacaciones a crear" value={counts.vacationsToCreate} strong />
+        <Count label="Ausencias a crear" value={counts.vacationsToCreate} strong />
         <Count label="Futuros descartados" value={counts.skippedFuture} />
         <Count label="Ya existentes" value={counts.skippedExisting} />
         <Count label="Fuera del periodo" value={counts.skippedOutOfPeriod} />
@@ -417,13 +417,13 @@ function ImportPreview({ result, periods, refreshing, confirming, confirmError, 
       {result.absences.length > 0 && (
         <details className="rounded-lg border border-slate-200" open>
           <summary className="cursor-pointer px-3 py-2 text-sm font-medium text-slate-800">
-            Vacaciones deducidas ({result.absences.length})
+            Ausencias ({result.absences.length})
           </summary>
           <ul className="divide-y divide-slate-100 text-sm">
             {result.absences.map((a) => (
               <li key={a.date} className="flex flex-wrap items-center justify-between gap-2 px-3 py-1.5">
                 <span>
-                  {formatDate(a.date)} · {ABSENCE_LABELS[a.type]}
+                  {formatDate(a.date)} · {absenceLabel(a.type, a.halfDay)}
                   {a.reason && <span className="ml-2 text-xs text-slate-500">{a.reason}</span>}
                 </span>
                 <span
@@ -441,7 +441,7 @@ function ImportPreview({ result, periods, refreshing, confirming, confirmError, 
       <div className="flex flex-wrap items-center gap-3">
         <Button size="lg" onClick={onConfirm} busy={confirming} disabled={nothingToDo || refreshing}>
           Confirmar: importar {counts.toImport} {counts.toImport === 1 ? 'día' : 'días'} y {counts.vacationsToCreate}{' '}
-          {counts.vacationsToCreate === 1 ? 'vacación' : 'vacaciones'}
+          {counts.vacationsToCreate === 1 ? 'ausencia' : 'ausencias'}
         </Button>
         {nothingToDo && <span className="text-sm text-slate-600">No hay nada que importar con estas opciones.</span>}
       </div>

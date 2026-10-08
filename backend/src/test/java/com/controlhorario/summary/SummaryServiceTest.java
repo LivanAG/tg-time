@@ -7,7 +7,6 @@ import java.time.YearMonth;
 import java.util.List;
 
 import com.controlhorario.calc.ExcelFixture;
-import com.controlhorario.calendar.calc.PeriodRules;
 import com.controlhorario.period.WorkPeriod;
 import com.controlhorario.summary.calc.PeriodSummary;
 import com.controlhorario.summary.calc.PeriodSummaryService;
@@ -56,9 +55,8 @@ class SummaryServiceTest {
     void openingBalanceIsTheBalanceOfThePreviousMonthOrTheInitialOne() {
         PeriodSummary summary = new PeriodSummaryService().summarize(ExcelFixture.calendar(),
                 ExcelFixture.realWorkdays(), ExcelFixture.vacations(), ExcelFixture.TODAY);
-        PeriodRules rules = ExcelFixture.rules();
-        assertThat(SummaryService.openingBalance(summary, YearMonth.of(2026, 5), rules)).isZero();
-        assertThat(SummaryService.openingBalance(summary, YearMonth.of(2026, 6), rules)).isEqualTo(90);
-        assertThat(SummaryService.openingBalance(summary, YearMonth.of(2026, 7), rules)).isEqualTo(210);
+        assertThat(summary.openingBalanceAt(YearMonth.of(2026, 5))).isZero();
+        assertThat(summary.openingBalanceAt(YearMonth.of(2026, 6))).isEqualTo(90);
+        assertThat(summary.openingBalanceAt(YearMonth.of(2026, 7))).isEqualTo(210);
     }
 }

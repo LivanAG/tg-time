@@ -30,6 +30,7 @@ public record MonthSummaryDto(
         int differenceMinutes,
         int theoreticalToDateMinutes,
         int workedToDateMinutes,
+        int roundedToDateMinutes,
         int differenceToDateMinutes,
         int openingBalanceMinutes,
         int closingBalanceMinutes,

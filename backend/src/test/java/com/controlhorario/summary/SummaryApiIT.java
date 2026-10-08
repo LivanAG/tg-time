@@ -91,6 +91,7 @@ class SummaryApiIT extends DomainApiTestSupport {
                 .andExpect(jsonPath("$.theoreticalMinutes").value(9840))
                 .andExpect(jsonPath("$.workedMinutes").value(9960))
                 .andExpect(jsonPath("$.roundedMinutes").value(9960))
+                .andExpect(jsonPath("$.roundedToDateMinutes").value(9960))
                 .andExpect(jsonPath("$.differenceMinutes").value(120))
                 .andExpect(jsonPath("$.openingBalanceMinutes").value(90))
                 .andExpect(jsonPath("$.closingBalanceMinutes").value(210))

@@ -109,6 +109,8 @@ class MonthSummaryServiceTest {
         assertThat(october.theoreticalMinutes()).isEqualTo(21 * 8 * 60);
         assertThat(october.theoreticalToDateMinutes()).isEqualTo(5 * 8 * 60);   // 1, 2, 5, 6 y 7 de octubre
         assertThat(october.workedToDateMinutes()).isEqualTo(40 * 60 + 6);
+        // Redondeado hasta hoy: el acumulado de los días pasados redondeado a 15 min (40:06 → 40:00).
+        assertThat(october.roundedToDateMinutes()).isEqualTo(40 * 60);
         assertThat(october.differenceToDateMinutes()).isEqualTo(6);
     }
 

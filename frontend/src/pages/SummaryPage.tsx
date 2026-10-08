@@ -1,13 +1,14 @@
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router'
 
-import { summaryApi } from '../api/endpoints'
+import { errorMessage, saveBlob } from '../api/client'
+import { importExportApi, summaryApi } from '../api/endpoints'
 import { queryKeys } from '../api/queryKeys'
 import type { MonthRowDto, PeriodDto, PeriodSummaryDto } from '../api/types'
 import { Duration } from '../components/Duration'
 import { IssueList } from '../components/IssueList'
 import { NoPeriod } from '../components/NoPeriod'
-import { Card, QueryError, Spinner, Stat } from '../components/ui'
+import { Alert, Button, Card, QueryError, Spinner, Stat } from '../components/ui'
 import { useSelectedPeriod } from '../hooks/usePeriods'
 import { capitalize, formatDate, formatMonthShort } from '../lib/dates'
 import { formatDays, formatNumber } from '../lib/format'
@@ -16,6 +17,10 @@ import { formatMinutes } from '../lib/time'
 /** /resumen — equivalente a la hoja Horas del Excel. */
 export function SummaryPage() {
   const { periodsQuery, period } = useSelectedPeriod()
+  const exportPeriod = useMutation({
+    mutationFn: (periodId: string) => importExportApi.exportPeriodXlsx(periodId),
+    onSuccess: saveBlob,
+  })
 
   return (
     <div className="space-y-4">
@@ -24,7 +29,19 @@ export function SummaryPage() {
           <h1 className="text-2xl font-semibold text-slate-900">Resumen anual</h1>
           <p className="text-sm text-slate-600">Horas del periodo frente al convenio (hoja Horas del Excel).</p>
         </div>
+        {period && (
+          <Button
+            variant="secondary"
+            size="sm"
+            busy={exportPeriod.isPending}
+            onClick={() => exportPeriod.mutate(period.id)}
+            title="Hoja Resumen y una hoja por cada mes del periodo"
+          >
+            Exportar a Excel
+          </Button>
+        )}
       </header>
+      {exportPeriod.isError && <Alert tone="error">No se ha podido exportar: {errorMessage(exportPeriod.error)}</Alert>}
       {periodsQuery.isPending ? (
         <Spinner />
       ) : periodsQuery.isError ? (

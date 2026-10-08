@@ -29,7 +29,9 @@ import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
 /**
- * Lee un Excel HORAS_IZERTIS (docs/EXCEL.md) sin consultar la base de datos ni evaluar fórmulas.
+ * Lee un Excel sin consultar la base de datos ni evaluar fórmulas (docs/EXCEL.md): el HORAS_IZERTIS de la
+ * empresa o el que exporta la app. Las hojas exportadas por la app se reconocen por su cabecera
+ * ({@link ExcelReportLayout#matches}) y las lee {@link ExcelReportParser}; el resto, con el diseño de la empresa:
  * <ul>
  *   <li>Hojas mensuales: las que tienen fechas en la columna A de las filas de datos. El mes es el
  *       (año, mes) más frecuente entre esas fechas; no se usa el nombre de la hoja ni B3.</li>
@@ -58,19 +60,32 @@ public final class ExcelWorkbookParser {
 
     public ParsedWorkbook parse(Workbook workbook) {
         boolean date1904 = workbook instanceof XSSFWorkbook xssf && xssf.isDate1904();
+        List<ParsedSheet> sheets = new ArrayList<>();
         List<SheetData> monthly = new ArrayList<>();
+        DetectedSettings exportedSettings = null;
         List<String> warnings = new ArrayList<>();
         Sheet summary = null;
         for (Sheet sheet : workbook) {
+            if (ExcelReportLayout.matches(sheet)) {
+                ExcelReportParser.Result exported = ExcelReportParser.parse(sheet, date1904, warnings);
+                if (exported != null) {
+                    sheets.add(exported.sheet());
+                    exportedSettings = exportedSettings == null ? exported.settings() : exportedSettings;
+                }
+                continue;
+            }
             Optional<YearMonth> month = detectMonth(sheet, date1904);
             if (month.isPresent()) {
-                monthly.add(parseSheet(sheet, month.get(), date1904, warnings));
+                SheetData data = parseSheet(sheet, month.get(), date1904, warnings);
+                monthly.add(data);
+                sheets.add(data.sheet());
             } else if (summary == null && SUMMARY_SHEET.equalsIgnoreCase(sheet.getSheetName().trim())) {
                 summary = sheet;
             }
         }
-        return new ParsedWorkbook(monthly.stream().map(SheetData::sheet).toList(), detectSettings(summary, monthly),
-                warnings);
+        DetectedSettings settings = monthly.isEmpty() && exportedSettings != null ? exportedSettings
+                : detectSettings(summary, monthly);
+        return new ParsedWorkbook(sheets, settings, warnings);
     }
 
     /** Mes de la hoja: el (año, mes) más frecuente en la columna A de las filas de datos (empate: el primero). */
@@ -112,7 +127,8 @@ public final class ExcelWorkbookParser {
                     + (n == 1 ? "fila " : "filas ") + ranges(correctedRows)
                     + "); se usa la fecha que corresponde a su posición en la hoja");
         }
-        return new SheetData(new ParsedSheet(name, month, rows, correctedRows.size(), days), header(sheet));
+        return new SheetData(new ParsedSheet(name, month, rows, correctedRows.size(), days, false, List.of()),
+                header(sheet));
     }
 
     private ParsedDay parseDay(Row row, String sheet, int r, LocalDate date, LocalDate written) {
@@ -168,7 +184,7 @@ public final class ExcelWorkbookParser {
 
         Integer excelWorked = duration(row, ExcelLayout.COL_WORKED, "Total Día", messages);
 
-        return new ParsedDay(date, sheet, r, start, end, breaks, location, mixed, excelWorked,
+        return new ParsedDay(date, sheet, r, start, end, breaks, location, mixed, null, excelWorked,
                 representable, errors, messages);
     }
 

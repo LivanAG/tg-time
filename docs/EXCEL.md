@@ -1,4 +1,4 @@
-# Formato del Excel HORAS_IZERTIS (importación y exportación)
+# Formato de los Excel: HORAS_IZERTIS (importación) y el que exporta la app
 
 Referencia para `importexport`. El fichero real está en
 `backend/src/test/resources/excel/HORAS_IZERTIS_2026-27.xlsx` y su contenido, ya interpretado, en
@@ -97,8 +97,68 @@ Las ausencias propuestas siguen la misma lógica (`EXISTS` si ya hay ausencia o 
 
 ## Exportación
 
-`GET /api/export/xlsx?year=&month=` genera una hoja con el mismo diseño (cabecera F1-F3, J1/J2, L1/L2;
-filas 7-39 por la misma rejilla; columnas B-I, M, N/O (en un día mixto, el hueco entre tramos va en
-G/H si no hay otra pausa); L y P con los valores calculados; subtotales
-semanales en L/P de las filas 12, 19, 26, 33, 40; pie: C46 teóricas, C47 hechas, C48 faltan, C49 sobran
-y las vacaciones en C53). Debe poder **reimportarse** y dar los mismos datos (test de ida y vuelta).
+`GET /api/export/xlsx?year=&month=` genera una hoja (`Octubre 2026`) con un **diseño propio**, pensado para
+leerse e imprimirse, que la importación también reconoce (`ExcelReportLayout`, `ExcelMonthWriter`,
+`ExcelReportParser`). Todos los valores son calculados, sin fórmulas.
+
+| Fila | Contenido |
+|---|---|
+| 1 | Título: `Registro de jornada · Octubre de 2026` |
+| 2 | `Nombre`, `Empresa`, `Periodo` (etiquetas en A, E, I; valores en C, G, K) |
+| 3 | `Jornada normal` (C), `Jornada intensiva` (G), `Teletrabajo máx.` (K, número 50 con formato `0 %`) |
+| 4 | `Tolerancia desayuno` (C), `Comida mínima` (G), `Redondeo` (K) |
+| 6-7 | Cabecera de la tabla en dos niveles (abajo) |
+| 8… | Un día por fila (todos los del mes), con un subtotal debajo de cada semana y al final `Total del mes` |
+| tras el total | `Resumen del mes` (al imprimir, en una segunda página) |
+
+Columnas de la tabla:
+
+| Col | Cabecera | Contenido |
+|---|---|---|
+| A | Fecha | fecha (`dd/mm/yyyy`) |
+| B | Día | `Lunes`… |
+| C | Ubicación | `Oficina`, `Casa`, `Mixto`; sin fichaje: `Fin de semana`, `Festivo: <nombre>`, `Fuera del periodo` o vacío |
+| D | Ausencia | `Vacaciones`, `Puente recuperable`, `Permiso`, `Baja`; con ` (medio día)` si es medio día |
+| E/F | Oficina · Entrada/Salida | entrada y salida si el día es de oficina, o el tramo de oficina si es mixto |
+| G/H | Casa · Entrada/Salida | ídem para casa (cada hora aparece una sola vez) |
+| I/J | Desayuno · Inicio/Fin | |
+| K/L | Comida · Inicio/Fin | |
+| M | Otras pausas | texto `11:00–11:15, 17:00–17:10` |
+| N | Total | trabajado del día (`[h]:mm`) |
+| O | Redondeado | redondeado del día, junto al total |
+| P | Notas | notas del día |
+
+Las filas de subtotal (`Semana 1 jun – 7 jun · teóricas 40:00 · diferencia +0:15`, total y redondeado en
+N/O) y la de `Total del mes` no tienen fecha en A, así que la importación las salta. El resumen repite el
+cierre del mes de la app: Horas (teóricas, hechas sin redondear y redondeadas, diferencia; mes completo y
+hasta hoy), Saldo (apertura + diferencia − puentes = cierre), Ausencias y Teletrabajo.
+
+Fines de semana en gris, festivos en rojo claro y ausencias de día completo en verde claro. Al abrirlo la
+cabecera de la tabla queda fija al desplazarse; se imprime en A4 apaisado ajustado al ancho.
+
+### Volver a importarlo
+
+Una hoja se trata como exportada por la app si en la fila 6 están `Fecha` (A), `Oficina` (E) y `Casa` (G).
+Se lee cada fila con fecha: la ubicación decide qué horas valen (con `Oficina` solo E/F, con `Casa` solo
+G/H —las otras se ignoran con un aviso—, con `Mixto` las cuatro), las pausas de I-M, el total de N (para
+avisar si no coincide con el calculado) y las notas de P. La columna Ausencia crea esa ausencia (también
+las futuras, que son vacaciones planificadas) si el día es laborable en el periodo; si ya había otra
+distinta solo se sustituye con `overwrite`. En estas hojas **no se deducen vacaciones** (ya vienen
+escritas). Los parámetros de las filas 3-4 se proponen como en el Excel de la empresa. Exportar un mes e
+importarlo en otra cuenta da los mismos fichajes y ausencias (test de ida y vuelta).
+
+### Periodo completo
+
+`GET /api/export/xlsx/period` (botón "Exportar a Excel" de la pantalla Resumen) genera un libro con:
+
+1. Hoja `Resumen` (`ExcelPeriodWriter`): la misma cabecera de datos y parámetros (filas 1-4) y la tabla por
+   meses de la pantalla Resumen: Mes (enlaza con su hoja; el actual marcado como «(actual)» y resaltado, los
+   futuros en gris), Días laborables (total, normal, intensiva), Horas del mes, Vacaciones (días y horas),
+   Teóricas, Hechas, Diferencia, Puentes y Saldo acumulado, con su fila Total. Debajo, los bloques «Margen
+   sobre el convenio» y «Vacaciones y horas» (saldo hasta hoy y proyección), una nota con las fórmulas y los
+   avisos del periodo. Cabe en una página A4 apaisada.
+2. Una hoja por cada mes que toca el periodo (`Mayo 2026` … `Mayo 2027`), igual que la exportación de un mes.
+   Cada una abre con el saldo acumulado al cerrar la anterior.
+
+Al importarlo, la hoja `Resumen` se ignora (no tiene la cabecera de las hojas mensuales ni fechas en la
+columna A) y se leen todas las hojas de mes.

@@ -1,19 +1,24 @@
 package com.controlhorario.importexport.excel;
 
 import static com.controlhorario.importexport.excel.ExcelCells.cell;
+import static com.controlhorario.importexport.excel.ExcelReportLayout.*;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.YearMonth;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import com.controlhorario.absence.AbsenceType;
 import com.controlhorario.calc.ExcelFixture;
 import com.controlhorario.calendar.calc.PeriodCalendar;
 import com.controlhorario.calendar.calc.PeriodRules;
+import com.controlhorario.summary.calc.AbsenceInput;
 import com.controlhorario.summary.calc.DaySummary;
 import com.controlhorario.summary.calc.MonthSummary;
 import com.controlhorario.summary.calc.MonthSummaryService;
@@ -24,35 +29,59 @@ import com.controlhorario.workday.calc.MixedTimes;
 import com.controlhorario.workday.calc.WorkdayCalculator;
 import com.controlhorario.workday.calc.WorkdayInput;
 
+import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.junit.jupiter.api.Test;
 
 class ExcelMonthWriterTest {
 
     private static final YearMonth JUNE = YearMonth.of(2026, 6);
+    private static final YearMonth OCTOBER = YearMonth.of(2026, 10);
     private static final PeriodRules RULES = ExcelFixture.rules();
 
-    private static MonthSummary summarize(YearMonth month, List<WorkdayInput> workdays) {
-        return new MonthSummaryService().summarize(new PeriodCalendar(RULES), month, workdays,
-                ExcelFixture.vacations(), 0, ExcelFixture.TODAY);
+    private static MonthSummary summarize(YearMonth month, List<WorkdayInput> workdays, List<AbsenceInput> absences) {
+        return new MonthSummaryService().summarize(new PeriodCalendar(RULES), month, workdays, absences, 0,
+                ExcelFixture.TODAY);
+    }
+
+    private static byte[] export(YearMonth month, List<WorkdayInput> workdays, List<AbsenceInput> absences,
+            Map<LocalDate, String> notes) {
+        return new ExcelMonthWriter().write(new ExcelMonthWriter.MonthData("Livan Aranda", "IZERTIS",
+                "2026-2027 (26/05/2026 – 25/05/2027)", RULES, summarize(month, workdays, absences), notes));
     }
 
     private static byte[] export(YearMonth month, List<WorkdayInput> workdays) {
-        return new ExcelMonthWriter().write(new ExcelMonthWriter.MonthData("Livan Aranda", "IZERTIS", RULES,
-                summarize(month, workdays), workdays));
+        return export(month, workdays, ExcelFixture.vacations(), Map.of());
+    }
+
+    private static List<WorkdayInput> realWorkdaysOf(YearMonth month) {
+        return ExcelFixture.realWorkdays().stream().filter(w -> YearMonth.from(w.date()).equals(month)).toList();
+    }
+
+    private static ParsedWorkbook reimport(byte[] bytes) {
+        return ExcelWorkbookReader.read(bytes, new ExcelWorkbookParser()::parse);
+    }
+
+    private static WorkdayInput day(LocalDate date, Location location, MixedTimes mixed, String start, String end,
+            BreakInput... breaks) {
+        return new WorkdayInput(date, start == null ? null : LocalTime.parse(start),
+                end == null ? null : LocalTime.parse(end), List.of(breaks), location, mixed);
+    }
+
+    private static BreakInput br(BreakType type, String start, String end) {
+        return new BreakInput(type, LocalTime.parse(start), LocalTime.parse(end));
     }
 
     @Test
     void exportedJuneIsReadBackWithTheSameWorkdays() {
-        List<WorkdayInput> june = ExcelFixture.realWorkdays().stream()
-                .filter(w -> YearMonth.from(w.date()).equals(JUNE))
-                .toList();
-        ParsedWorkbook parsed = ExcelWorkbookReader.read(export(JUNE, june), new ExcelWorkbookParser()::parse);
+        List<WorkdayInput> june = realWorkdaysOf(JUNE);
+        ParsedWorkbook parsed = reimport(export(JUNE, june));
 
         assertThat(parsed.sheets()).singleElement().satisfies(sheet -> {
             assertThat(sheet.name()).isEqualTo("Junio 2026");
             assertThat(sheet.month()).isEqualTo(JUNE);
-            assertThat(sheet.rows()).isEqualTo(22);
+            assertThat(sheet.exported()).isTrue();
+            assertThat(sheet.rows()).isEqualTo(30);                  // todos los días del mes
             assertThat(sheet.dateCorrections()).isZero();
         });
         assertThat(parsed.warnings()).isEmpty();
@@ -76,103 +105,151 @@ class ExcelMonthWriterTest {
     }
 
     @Test
-    void footerAndSubtotalsComeFromTheMonthSummary() {
-        List<WorkdayInput> june = ExcelFixture.realWorkdays().stream()
-                .filter(w -> YearMonth.from(w.date()).equals(JUNE))
-                .toList();
-        MonthSummary summary = summarize(JUNE, june);
+    void theSheetHasAClearHeaderTotalsAndASummary() {
+        List<WorkdayInput> june = realWorkdaysOf(JUNE);
+        MonthSummary summary = summarize(JUNE, june, ExcelFixture.vacations());
         int week1Worked = summary.days().stream().filter(d -> d.date().isBefore(LocalDate.of(2026, 6, 8)))
                 .mapToInt(DaySummary::workedMinutes).sum();
-        int rounded = summary.days().stream().mapToInt(DaySummary::roundedMinutes).sum();
 
-        Map<String, Integer> cells = ExcelWorkbookReader.read(export(JUNE, june), wb -> {
+        Map<String, Object> cells = ExcelWorkbookReader.read(export(JUNE, june), wb -> {
             Sheet sheet = wb.getSheetAt(0);
-            return Map.of(
-                    "F1", ExcelCells.durationMinutes(cell(sheet, "F1")),
-                    "J1", ExcelCells.integer(cell(sheet, "J1")),
-                    "L1", ExcelCells.integer(cell(sheet, "L1")),
-                    "L7", ExcelCells.durationMinutes(cell(sheet, "L7")),
-                    "P7", ExcelCells.durationMinutes(cell(sheet, "P7")),
-                    "L12", ExcelCells.totalMinutes(cell(sheet, "L12")),
-                    "L43", ExcelCells.totalMinutes(cell(sheet, "L43")),
-                    "P43", ExcelCells.totalMinutes(cell(sheet, "P43")),
-                    "C46", ExcelCells.totalMinutes(cell(sheet, "C46")),
-                    "C47", ExcelCells.totalMinutes(cell(sheet, "C47")));
+            Map<String, Object> values = new HashMap<>();
+            values.put("title", sheet.getRow(TITLE_ROW).getCell(COL_DATE).getStringCellValue());
+            values.put("headers", headers(sheet));
+            Row firstDay = sheet.getRow(FIRST_DATA_ROW);
+            values.put("weekday", firstDay.getCell(COL_WEEKDAY).getStringCellValue());
+            values.put("worked", ExcelCells.durationMinutes(firstDay.getCell(COL_WORKED)));
+            values.put("rounded", ExcelCells.durationMinutes(firstDay.getCell(COL_ROUNDED)));
+            // 1-7 de junio (lunes a domingo) y debajo el subtotal de la semana.
+            Row week = sheet.getRow(FIRST_DATA_ROW + 7);
+            values.put("week", week.getCell(COL_DATE).getStringCellValue());
+            values.put("weekWorked", ExcelCells.totalMinutes(week.getCell(COL_WORKED)));
+            for (int r = FIRST_DATA_ROW; r <= sheet.getLastRowNum(); r++) {
+                Row row = sheet.getRow(r);
+                String label = row == null || row.getCell(COL_DATE) == null ? ""
+                        : row.getCell(COL_DATE).toString();
+                if (TOTAL_LABEL.equals(label)) {
+                    values.put("total", ExcelCells.totalMinutes(row.getCell(COL_WORKED)));
+                    values.put("totalRounded", ExcelCells.totalMinutes(row.getCell(COL_ROUNDED)));
+                } else if ("Teóricas".equals(label)) {
+                    values.put("theoretical", ExcelCells.totalMinutes(row.getCell(COL_ABSENCE)));
+                } else if ("= Saldo de cierre".equals(row == null || row.getCell(COL_BREAKFAST_START) == null ? ""
+                        : row.getCell(COL_BREAKFAST_START).toString())) {
+                    values.put("closing", row.getCell(COL_OTHER_BREAKS).getStringCellValue());
+                }
+            }
+            values.put("frozen", sheet.getPaneInformation().getHorizontalSplitPosition());
+            values.put("frozenColumns", sheet.getPaneInformation().getVerticalSplitPosition());
+            values.put("landscape", sheet.getPrintSetup().getLandscape());
+            return values;
         });
 
-        // Junio 2026: 10 días a 8 h y 12 a 7 h = 164 h; hechas 166 h (hoja Horas del Excel).
-        assertThat(summary.theoreticalMinutes()).isEqualTo(9840);
-        assertThat(summary.workedMinutes()).isEqualTo(9960);
-        assertThat(cells).containsEntry("F1", 30)
-                .containsEntry("J1", 10)
-                .containsEntry("L1", 12)
-                .containsEntry("L7", 466)
-                .containsEntry("P7", summary.days().get(0).roundedMinutes())
-                .containsEntry("L12", week1Worked)
-                .containsEntry("L43", 9960)
-                .containsEntry("P43", rounded)
-                .containsEntry("C46", 9840)
-                .containsEntry("C47", 9960);
-        Map<String, Object> footer = ExcelWorkbookReader.read(export(JUNE, june), wb -> {
-            Sheet sheet = wb.getSheetAt(0);
-            return Map.of(
-                    "C48", ExcelCells.totalMinutes(cell(sheet, "C48")),
-                    "C49", ExcelCells.totalMinutes(cell(sheet, "C49")),
-                    "C53", cell(sheet, "C53").getNumericCellValue(),
-                    "A12", cell(sheet, "A12").getStringCellValue());
-        });
-        assertThat(footer).containsEntry("C48", 0).containsEntry("C49", 120).containsEntry("C53", 0.0)
-                .containsEntry("A12", "Semana 1");
+        assertThat(cells.get("title")).isEqualTo("Registro de jornada · Junio de 2026");
+        assertThat(cells.get("headers")).isEqualTo(List.of("Fecha", "Día", "Ubicación", "Ausencia", "Oficina", "",
+                "Casa", "", "Desayuno", "", "Comida", "", "Otras pausas", "Total", "Redondeado", "Notas"));
+        assertThat(cells).containsEntry("weekday", "Lunes")
+                .containsEntry("worked", 466)
+                .containsEntry("rounded", summary.days().get(0).roundedMinutes())
+                .containsEntry("weekWorked", week1Worked)
+                .containsEntry("total", 9960)
+                .containsEntry("totalRounded", summary.roundedMinutes())
+                .containsEntry("theoretical", 9840)
+                .containsEntry("closing", "+2:00")
+                .containsEntry("landscape", true)
+                .containsEntry("frozen", (short) FIRST_DATA_ROW)
+                .containsEntry("frozenColumns", (short) 0);
+        assertThat((String) cells.get("week")).startsWith("Semana 1 jun – 7 jun");
     }
 
     @Test
-    void augustExportCountsItsVacations() {
+    void weekendsHolidaysAndAbsencesAreLabelledAndAbsencesComeBack() {
         YearMonth august = YearMonth.of(2026, 8);
-        List<WorkdayInput> workdays = ExcelFixture.realWorkdays().stream()
-                .filter(w -> YearMonth.from(w.date()).equals(august))
-                .toList();
-        double vacations = ExcelWorkbookReader.read(export(august, workdays),
-                wb -> cell(wb.getSheetAt(0), "C53").getNumericCellValue());
-        assertThat(vacations).isEqualTo(12.0);
+        byte[] bytes = export(august, realWorkdaysOf(august));
+
+        Map<LocalDate, String> labels = ExcelWorkbookReader.read(bytes, wb -> {
+            Sheet sheet = wb.getSheetAt(0);
+            Map<LocalDate, String> result = new HashMap<>();
+            for (int r = FIRST_DATA_ROW; r < FIRST_DATA_ROW + 40; r++) {
+                Row row = sheet.getRow(r);
+                if (row != null && row.getCell(COL_DATE) != null
+                        && row.getCell(COL_DATE).getCellType() == org.apache.poi.ss.usermodel.CellType.NUMERIC) {
+                    LocalDate date = row.getCell(COL_DATE).getLocalDateTimeCellValue().toLocalDate();
+                    result.put(date, row.getCell(COL_LOCATION).toString() + "|" + row.getCell(COL_ABSENCE));
+                }
+            }
+            return result;
+        });
+        assertThat(labels.get(LocalDate.of(2026, 8, 1))).isEqualTo("Fin de semana|");
+        assertThat(labels.get(LocalDate.of(2026, 8, 15))).startsWith("Fin de semana");   // la Asunción cae en sábado
+        assertThat(labels.get(LocalDate.of(2026, 8, 17))).isEqualTo("|Vacaciones");
+
+        ParsedWorkbook parsed = reimport(bytes);
+        assertThat(parsed.absences()).hasSize(12)
+                .allMatch(a -> a.type() == AbsenceType.VACACIONES && !a.halfDay());
+        assertThat(parsed.companyMonthDates()).isEmpty();
     }
 
     @Test
-    void mixedSegmentsWithAGapSurviveTheRoundTrip() {
-        LocalDate date = LocalDate.of(2026, 10, 5);
-        // Oficina 08:00-12:00 y casa 13:00-17:00: el hueco 12:00-13:00 se escribe como "otra pausa" (G/H).
-        WorkdayInput mixed = new WorkdayInput(date, null, null,
-                List.of(new BreakInput(BreakType.DESAYUNO, LocalTime.of(10, 0), LocalTime.of(10, 25)),
-                        new BreakInput(BreakType.COMIDA, LocalTime.of(14, 0), LocalTime.of(14, 20))),
-                Location.MIXTO, new MixedTimes(LocalTime.of(8, 0), LocalTime.of(12, 0), LocalTime.of(13, 0),
-                        LocalTime.of(17, 0)));
-        byte[] bytes = export(YearMonth.of(2026, 10), List.of(mixed));
+    void mixedDaysNotesOtherBreaksAndHalfDayAbsencesSurviveTheRoundTrip() {
+        LocalDate monday = LocalDate.of(2026, 10, 5);
+        LocalDate tuesday = LocalDate.of(2026, 10, 6);
+        WorkdayInput mixed = day(monday, Location.MIXTO, new MixedTimes(LocalTime.of(8, 0), LocalTime.of(12, 0),
+                LocalTime.of(13, 0), LocalTime.of(17, 0)), null, null,
+                br(BreakType.DESAYUNO, "10:00", "10:25"), br(BreakType.COMIDA, "14:00", "14:20"),
+                br(BreakType.OTRA, "15:00", "15:10"), br(BreakType.OTRA, "16:00", "16:05"));
+        WorkdayInput home = day(tuesday, Location.CASA, null, "08:00", "12:00");
+        List<AbsenceInput> absences = List.of(new AbsenceInput(tuesday, AbsenceType.VACACIONES, true));
+        Map<LocalDate, String> notes = Map.of(monday, "Reunión con cliente");
 
-        ParsedDay day = ExcelWorkbookReader.read(bytes, new ExcelWorkbookParser()::parse).days().get(0);
+        ParsedWorkbook parsed = reimport(export(OCTOBER, List.of(mixed, home), absences, notes));
 
-        assertThat(day.date()).isEqualTo(date);
-        assertThat(day.startTime()).isEqualTo(LocalTime.of(8, 0));
-        assertThat(day.endTime()).isEqualTo(LocalTime.of(17, 0));
-        assertThat(day.location()).isEqualTo(Location.MIXTO);
-        assertThat(day.mixed()).isEqualTo(mixed.mixed());
-        assertThat(day.breaks()).containsExactlyElementsOf(mixed.breaks());
-        // 240 + 240 - 5 (desayuno) - 30 (comida mínima) = 445, igual que el Excel (L = I - B - pausas).
-        assertThat(day.excelWorkedMinutes()).isEqualTo(445);
-        assertThat(day.representable()).isTrue();
+        List<ParsedDay> days = new ArrayList<>(parsed.days());
+        assertThat(days).hasSize(2);
+        ParsedDay first = days.get(0);
+        assertThat(first.location()).isEqualTo(Location.MIXTO);
+        assertThat(first.mixed()).isEqualTo(mixed.mixed());
+        assertThat(first.startTime()).isEqualTo(LocalTime.of(8, 0));
+        assertThat(first.endTime()).isEqualTo(LocalTime.of(17, 0));
+        assertThat(first.breaks()).containsExactlyElementsOf(mixed.breaks());
+        assertThat(first.notes()).isEqualTo("Reunión con cliente");
+        // 240 + 240 - 5 (desayuno) - 30 (comida mínima) - 15 (otras) = 430
+        assertThat(first.excelWorkedMinutes()).isEqualTo(430);
+        assertThat(first.errors()).isEmpty();
+
+        ParsedDay second = days.get(1);
+        assertThat(second.location()).isEqualTo(Location.CASA);
+        assertThat(second.startTime()).isEqualTo(LocalTime.of(8, 0));
+        assertThat(second.endTime()).isEqualTo(LocalTime.of(12, 0));
+        assertThat(second.mixed()).isNull();
+        assertThat(parsed.absences()).singleElement().satisfies(a -> {
+            assertThat(a.date()).isEqualTo(tuesday);
+            assertThat(a.type()).isEqualTo(AbsenceType.VACACIONES);
+            assertThat(a.halfDay()).isTrue();
+        });
     }
 
     @Test
-    void mixedSegmentsWithoutGapKeepTheirOtherBreaks() {
-        LocalDate date = LocalDate.of(2026, 10, 6);
-        WorkdayInput mixed = new WorkdayInput(date, null, null,
-                List.of(new BreakInput(BreakType.OTRA, LocalTime.of(16, 0), LocalTime.of(16, 10))),
-                Location.MIXTO, new MixedTimes(LocalTime.of(8, 0), LocalTime.of(13, 0), LocalTime.of(13, 0),
-                        LocalTime.of(17, 0)));
-        byte[] bytes = export(YearMonth.of(2026, 10), List.of(mixed));
+    void rowsGrowToFitLongNotesAndSeveralOtherBreaks() {
+        assertThat(ExcelMonthWriter.lines(null, COL_NOTES)).isEqualTo(1);
+        assertThat(ExcelMonthWriter.lines("Reunión con cliente", COL_NOTES)).isEqualTo(1);
+        assertThat(ExcelMonthWriter.lines("Primera línea\nSegunda línea", COL_NOTES)).isEqualTo(2);
+        assertThat(ExcelMonthWriter.lines("15:30–15:40, 16:00–16:05", COL_OTHER_BREAKS)).isEqualTo(1);
+        assertThat(ExcelMonthWriter.lines("15:30–15:40, 16:00–16:05, 17:00–17:10", COL_OTHER_BREAKS)).isEqualTo(2);
 
-        ParsedDay day = ExcelWorkbookReader.read(bytes, new ExcelWorkbookParser()::parse).days().get(0);
+        LocalDate monday = LocalDate.of(2026, 10, 5);
+        WorkdayInput office = day(monday, Location.OFICINA, null, "08:00", "15:00");
+        String note = "Reunión de seguimiento con el cliente y revisión del sprint con todo el equipo";
+        float height = ExcelWorkbookReader.read(export(OCTOBER, List.of(office), List.of(), Map.of(monday, note)),
+                wb -> wb.getSheetAt(0).getRow(FIRST_DATA_ROW + 5).getHeightInPoints());   // 1-4 oct, subtotal, 5 oct
+        assertThat(height).isGreaterThan(17);
+    }
 
-        assertThat(day.mixed()).isEqualTo(mixed.mixed());
-        assertThat(day.breaks()).containsExactlyElementsOf(mixed.breaks());
-        assertThat(day.excelWorkedMinutes()).isEqualTo(530);
+    private static List<String> headers(Sheet sheet) {
+        List<String> headers = new ArrayList<>();
+        Row row = sheet.getRow(GROUP_HEADER_ROW);
+        for (int c = 0; c <= LAST_COL; c++) {
+            headers.add(row.getCell(c) == null ? "" : row.getCell(c).getStringCellValue());
+        }
+        return headers;
     }
 }

@@ -30,6 +30,7 @@ import com.controlhorario.importexport.dto.ImportWorkdayDto;
 import com.controlhorario.importexport.excel.ExcelFileException;
 import com.controlhorario.importexport.excel.ExcelWorkbookParser;
 import com.controlhorario.importexport.excel.ExcelWorkbookReader;
+import com.controlhorario.importexport.excel.ParsedAbsence;
 import com.controlhorario.importexport.excel.ParsedDay;
 import com.controlhorario.importexport.excel.ParsedWorkbook;
 import com.controlhorario.period.PeriodRulesFactory;
@@ -80,7 +81,9 @@ public class ImportService {
             Integer computedWorkedMinutes, boolean mismatch, List<String> messages, Workday existing) {
     }
 
-    private record AbsencePlan(LocalDate date, ImportAction action, String reason) {
+    /** {@code existing} es la ausencia que ya había ese día, si se va a sustituir. */
+    private record AbsencePlan(LocalDate date, AbsenceType type, boolean halfDay, ImportAction action, String reason,
+            Absence existing) {
     }
 
     private record Plan(WorkPeriod period, ParsedWorkbook parsed, ImportOptions options, List<DayPlan> days,
@@ -162,8 +165,9 @@ public class ImportService {
                     existingAbsences.get(day.date())));
         }
 
-        List<AbsencePlan> vacations = planVacations(parsed, calendar, options, today, seen.keySet(),
-                existingWorkdays, existingAbsences);
+        List<AbsencePlan> vacations = new ArrayList<>(planVacations(parsed, calendar, options, today, seen.keySet(),
+                existingWorkdays, existingAbsences));
+        vacations.addAll(planWrittenAbsences(parsed, period, calendar, options, existingAbsences));
         return new Plan(period, parsed, options, List.copyOf(days), vacations, warnings(parsed, period, days));
     }
 
@@ -259,30 +263,61 @@ public class ImportService {
     }
 
     /**
-     * Vacaciones deducidas: días laborables del periodo (según sus festivos), hasta hoy, de los meses que
-     * cubre el fichero, sin fichaje en el Excel ni en la base de datos. Si ya hay una ausencia ese día
-     * no se toca.
+     * Vacaciones deducidas (solo en las hojas del Excel de la empresa, que no las marca): días laborables del
+     * periodo (según sus festivos), hasta hoy, sin fichaje en el Excel ni en la base de datos. Si ya hay una
+     * ausencia ese día no se toca.
      */
     private static List<AbsencePlan> planVacations(ParsedWorkbook parsed, PeriodCalendar calendar,
             ImportOptions options, LocalDate today, Set<LocalDate> excelDays, Map<LocalDate, Workday> existingWorkdays,
             Map<LocalDate, Absence> existingAbsences) {
         List<AbsencePlan> plans = new ArrayList<>();
-        for (LocalDate date : parsed.monthDates()) {
+        for (LocalDate date : parsed.companyMonthDates()) {
             if (!calendar.isWorkingDay(date) || date.isAfter(today) || excelDays.contains(date)
                     || existingWorkdays.containsKey(date)) {
                 continue;
             }
             Absence existing = existingAbsences.get(date);
             if (existing != null) {
-                plans.add(new AbsencePlan(date, ImportAction.SKIP,
-                        "Ya hay una ausencia ese día (" + existing.getType() + ")"));
+                plans.add(new AbsencePlan(date, AbsenceType.VACACIONES, false, ImportAction.SKIP,
+                        "Ya hay una ausencia ese día (" + existing.getType() + ")", null));
             } else if (options.markVacations()) {
-                plans.add(new AbsencePlan(date, ImportAction.IMPORT,
-                        "Día laborable sin fichaje en el Excel: se marca como vacaciones"));
+                plans.add(new AbsencePlan(date, AbsenceType.VACACIONES, false, ImportAction.IMPORT,
+                        "Día laborable sin fichaje en el Excel: se marca como vacaciones", null));
             } else {
-                plans.add(new AbsencePlan(date, ImportAction.SKIP,
-                        "Día laborable sin fichaje en el Excel (no se marcan vacaciones)"));
+                plans.add(new AbsencePlan(date, AbsenceType.VACACIONES, false, ImportAction.SKIP,
+                        "Día laborable sin fichaje en el Excel (no se marcan vacaciones)", null));
             }
+        }
+        return List.copyOf(plans);
+    }
+
+    /**
+     * Ausencias escritas en un Excel exportado por la app: se importan tal cual (también las futuras, que son
+     * vacaciones planificadas) si el día es laborable en el periodo. Una ausencia distinta ya guardada solo
+     * se sustituye con {@code overwrite}.
+     */
+    private static List<AbsencePlan> planWrittenAbsences(ParsedWorkbook parsed, WorkPeriod period,
+            PeriodCalendar calendar, ImportOptions options, Map<LocalDate, Absence> existingAbsences) {
+        List<AbsencePlan> plans = new ArrayList<>();
+        for (ParsedAbsence a : parsed.absences()) {
+            Absence existing = existingAbsences.get(a.date());
+            ImportAction action = ImportAction.SKIP;
+            String reason;
+            if (!period.contains(a.date())) {
+                reason = "Fuera del periodo «" + period.getName() + "»";
+            } else if (!calendar.isWorkingDay(a.date())) {
+                reason = "No es un día laborable del periodo";
+            } else if (existing != null && existing.getType() == a.type() && existing.isHalfDay() == a.halfDay()) {
+                reason = "Ya está registrada";
+            } else if (existing != null && !options.overwrite()) {
+                reason = "Ya hay otra ausencia ese día (" + existing.getType() + ")";
+            } else {
+                action = ImportAction.IMPORT;
+                reason = existing != null ? "Sustituye la ausencia que había (" + existing.getType() + ")"
+                        : "Ausencia del Excel";
+            }
+            plans.add(new AbsencePlan(a.date(), a.type(), a.halfDay(), action, reason,
+                    action == ImportAction.IMPORT ? existing : null));
         }
         return List.copyOf(plans);
     }
@@ -297,7 +332,7 @@ public class ImportService {
         long mismatches = days.stream().filter(DayPlan::mismatch).count();
         if (mismatches > 0) {
             warnings.add(mismatches + (mismatches == 1 ? " día no coincide" : " días no coinciden")
-                    + " con el Total Día (columna L) del Excel");
+                    + " con el total del día escrito en el Excel");
         }
         return List.copyOf(warnings);
     }
@@ -318,6 +353,9 @@ public class ImportService {
             workday.setEndTime(input.end());
             workday.setLocation(input.location());
             workday.setMixed(input.mixed());
+            if (p.day().notes() != null) {
+                workday.setNotes(p.day().notes());
+            }
             workday.replaceBreaks(input.breaks().stream()
                     .map(b -> new WorkdayBreak(b.type(), b.start(), b.end()))
                     .toList());
@@ -333,9 +371,10 @@ public class ImportService {
             if (p.action() != ImportAction.IMPORT) {
                 continue;
             }
-            Absence absence = new Absence(userId, plan.period().getId(), p.date());
-            absence.setType(AbsenceType.VACACIONES);
-            absence.setHalfDay(false);
+            Absence absence = p.existing() != null ? p.existing()
+                    : new Absence(userId, plan.period().getId(), p.date());
+            absence.setType(p.type());
+            absence.setHalfDay(p.halfDay());
             absences.save(absence);
             saved++;
         }
@@ -371,10 +410,11 @@ public class ImportService {
                 }
             }
             days.add(new ImportDayDto(p.day().date(), p.day().sheet(), p.day().row(), p.status(), p.action(),
-                    workdayDto(p.input()), p.day().excelWorkedMinutes(), p.computedWorkedMinutes(), p.messages()));
+                    workdayDto(p.input(), p.day().notes()), p.day().excelWorkedMinutes(), p.computedWorkedMinutes(),
+                    p.messages()));
         }
         List<ImportAbsenceDto> absenceDtos = plan.absences().stream()
-                .map(a -> new ImportAbsenceDto(a.date(), AbsenceType.VACACIONES, a.action(), a.reason()))
+                .map(a -> new ImportAbsenceDto(a.date(), a.type(), a.halfDay(), a.action(), a.reason()))
                 .toList();
         int vacationsToCreate = (int) plan.absences().stream().filter(a -> a.action() == ImportAction.IMPORT).count();
         ImportCountsDto counts = new ImportCountsDto(toImport, imported, skippedFuture, skippedExisting,
@@ -384,11 +424,11 @@ public class ImportService {
                 mapper.toDto(plan.parsed().settings()), plan.warnings(), counts);
     }
 
-    private ImportWorkdayDto workdayDto(WorkdayInput input) {
+    private ImportWorkdayDto workdayDto(WorkdayInput input, String notes) {
         MixedTimes m = input.mixed();
         return new ImportWorkdayDto(input.start(), input.end(),
                 input.breaks().stream().map(mapper::toDto).toList(), input.location(),
                 m == null ? null : m.officeStart(), m == null ? null : m.officeEnd(),
-                m == null ? null : m.homeStart(), m == null ? null : m.homeEnd(), null);
+                m == null ? null : m.homeStart(), m == null ? null : m.homeEnd(), notes);
     }
 }
