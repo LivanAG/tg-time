@@ -28,8 +28,9 @@ open_port() {
   local rule=(-p "$proto" -m state --state NEW -m "$proto" --dport "$port" -j ACCEPT)
   local line="-A INPUT ${rule[*]}"
   local rule_pos reject_pos
-  rule_pos=$(sudo iptables -S INPUT | grep -nxF -- "$line" | head -1 | cut -d: -f1)
-  reject_pos=$(sudo iptables -S INPUT | grep -n -- '^-A INPUT -j REJECT' | head -1 | cut -d: -f1)
+  # "|| true": grep sin coincidencias no debe parar el script (set -e con pipefail).
+  rule_pos=$(sudo iptables -S INPUT | grep -nxF -- "$line" | head -1 | cut -d: -f1 || true)
+  reject_pos=$(sudo iptables -S INPUT | grep -n -- '^-A INPUT -j REJECT' | head -1 | cut -d: -f1 || true)
   if [[ -n "$rule_pos" && -n "$reject_pos" && "$rule_pos" -gt "$reject_pos" ]]; then
     sudo iptables -D INPUT "${rule[@]}"
     rule_pos=""
@@ -45,7 +46,7 @@ open_port() {
   fi
   if [[ -f "$RULES" ]]; then
     # En el fichero que se carga al arrancar: fuera la línea esté donde esté, y de nuevo antes del REJECT.
-    sudo grep -vxF -- "$line" "$RULES" | sudo tee "$RULES.tmp" >/dev/null
+    { sudo grep -vxF -- "$line" "$RULES" || true; } | sudo tee "$RULES.tmp" >/dev/null
     sudo mv "$RULES.tmp" "$RULES"
     sudo sed -i "0,/^-A INPUT -j REJECT/s//${line}\n&/" "$RULES"
   fi
