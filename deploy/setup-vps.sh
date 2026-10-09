@@ -20,12 +20,21 @@ sudo dpkg-reconfigure -f noninteractive unattended-upgrades
 echo "==> Abriendo 80/tcp, 443/tcp y 443/udp en el firewall de la instancia"
 # Las imágenes de Ubuntu de OCI traen reglas iptables que solo dejan pasar SSH. Oracle desaconseja
 # ufw (sus reglas propias protegen el acceso al volumen de arranque), así que se añaden reglas
-# antes del REJECT final y se persisten en /etc/iptables/rules.v4 sin volcar las de Docker.
+# antes del REJECT final y se persisten en /etc/iptables/rules.v4 sin volcar las de Docker. Una regla
+# añadida después del REJECT no sirve (gana la primera que coincide): si está ahí, se vuelve a poner delante.
 RULES=/etc/iptables/rules.v4
 open_port() {
   local proto=$1 port=$2
   local rule=(-p "$proto" -m state --state NEW -m "$proto" --dport "$port" -j ACCEPT)
-  if ! sudo iptables -C INPUT "${rule[@]}" 2>/dev/null; then
+  local line="-A INPUT ${rule[*]}"
+  local rule_pos reject_pos
+  rule_pos=$(sudo iptables -S INPUT | grep -nxF -- "$line" | head -1 | cut -d: -f1)
+  reject_pos=$(sudo iptables -S INPUT | grep -n -- '^-A INPUT -j REJECT' | head -1 | cut -d: -f1)
+  if [[ -n "$rule_pos" && -n "$reject_pos" && "$rule_pos" -gt "$reject_pos" ]]; then
+    sudo iptables -D INPUT "${rule[@]}"
+    rule_pos=""
+  fi
+  if [[ -z "$rule_pos" ]]; then
     local reject_line
     reject_line=$(sudo iptables -L INPUT --line-numbers -n | awk '$2 == "REJECT" {print $1; exit}')
     if [[ -n "$reject_line" ]]; then
@@ -34,8 +43,10 @@ open_port() {
       sudo iptables -A INPUT "${rule[@]}"
     fi
   fi
-  local line="-A INPUT ${rule[*]}"
-  if [[ -f "$RULES" ]] && ! sudo grep -qxF -- "$line" "$RULES"; then
+  if [[ -f "$RULES" ]]; then
+    # En el fichero que se carga al arrancar: fuera la línea esté donde esté, y de nuevo antes del REJECT.
+    sudo grep -vxF -- "$line" "$RULES" | sudo tee "$RULES.tmp" >/dev/null
+    sudo mv "$RULES.tmp" "$RULES"
     sudo sed -i "0,/^-A INPUT -j REJECT/s//${line}\n&/" "$RULES"
   fi
 }
