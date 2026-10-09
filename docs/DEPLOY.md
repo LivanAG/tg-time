@@ -12,7 +12,7 @@ indica **dónde se ejecuta**:
 |---|---|
 | VM | Oracle Cloud Always Free, Madrid, VM.Standard.A1.Flex (arm64), 1 OCPU, 6 GB, Ubuntu 24.04 |
 | IP pública | `158.179.220.119` |
-| Código | repositorio privado en GitHub, clonado en la VM con una deploy key de solo lectura |
+| Código | GitHub `LivanAG/tg-time` (público), clonado en la VM por HTTPS; si pasa a privado, con una deploy key de solo lectura (sección 3) |
 | Imágenes | se construyen **en la propia VM** (`make deploy`), nativas arm64 |
 | Puertos publicados | solo Caddy: 80 y 443. PostgreSQL y backend sin puertos, en una red interna sin salida a internet |
 | HTTPS provisional | `https://horas.158-179-220-119.sslip.io` con certificado de Let's Encrypt (Caddy lo obtiene y renueva solo) |
@@ -127,7 +127,9 @@ ssh oracle-ch
 Sin el alias: `ssh -i "C:\Users\livan\Downloads\ssh-key-2026-10-07.key" ubuntu@158.179.220.119`.
 En el resto de la guía se usa `oracle-ch`.
 
-## 3. Deploy key de solo lectura (una vez)
+## 3. Deploy key de solo lectura (solo si el repositorio es privado)
+
+Con el repositorio público no hace falta: salta a la sección 4 y clona por HTTPS.
 
 **VM (bash)**: crea una clave solo para leer este repositorio.
 
@@ -161,9 +163,13 @@ Debe responder `Hi LivanAG/tg-time! You've successfully authenticated, but GitHu
 **VM (bash)**:
 
 ```bash
-git clone -b main git@github.com:LivanAG/tg-time.git ~/control-horario
+git clone -b main https://github.com/LivanAG/tg-time.git ~/control-horario
 cd ~/control-horario
 ```
+
+Con el repositorio privado (y la deploy key de la sección 3) clona por SSH:
+`git clone -b main git@github.com:LivanAG/tg-time.git ~/control-horario`. Si el repositorio pasa a privado
+después, en la VM: `git -C ~/control-horario remote set-url origin git@github.com:LivanAG/tg-time.git`.
 
 Opcional: `bash deploy/setup-vps.sh` instala actualizaciones de seguridad automáticas y endurece SSH
 (solo clave, sin root). Es idempotente: no reinstala Docker y no duplica las reglas de puertos que ya existan.
