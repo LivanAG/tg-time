@@ -1,6 +1,6 @@
 # HTTPS automático con Let's Encrypt (CADDYFILE=Caddyfile en .env). DOMAIN viene de .env.
 # Sin dominio propio sirve un nombre de sslip.io que apunta a la IP de la VM:
-#   DOMAIN=horas.158-179-220-119.sslip.io
+#   DOMAIN=horas.TU-IP.sslip.io   (IP con guiones, p. ej. horas.203-0-113-10.sslip.io)
 # Necesita los puertos 80 y 443 abiertos a internet (el reto ACME entra por ellos).
 {$DOMAIN} {
 	encode zstd gzip

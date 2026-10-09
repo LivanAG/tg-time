@@ -56,6 +56,7 @@ check-prod: .env
 	@if [ "$(PROFILE)" != "prod" ]; then echo "Requiere SPRING_PROFILE=prod en .env"; exit 1; fi
 	@if [ "$$(stat -c %a .env)" != "600" ]; then echo "Protege .env: chmod 600 .env"; exit 1; fi
 	@if grep -q '=cambia-esto' .env; then echo "Quedan valores 'cambia-esto' en .env"; exit 1; fi
+	@if grep -q '^DOMAIN=.*TU-IP' .env; then echo "Pon en DOMAIN la IP de tu VM (horas.1-2-3-4.sslip.io) o tu dominio"; exit 1; fi
 
 deploy: check-prod ## Construye las imágenes en la VM y (re)arranca todo
 	mkdir -p backups deploy/certs

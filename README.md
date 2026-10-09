@@ -91,9 +91,10 @@ Documentación técnica: [`docs/API.md`](docs/API.md) (contrato de la API) y
 
 ## Despliegue en Oracle Cloud
 
-Guía completa paso a paso en **[docs/DEPLOY.md](docs/DEPLOY.md)**: prueba previa en local con la
-configuración de producción, subida por git con deploy key, `.env`, build en la VM (arm64), HTTPS
-provisional con sslip.io y final con Cloudflare, actualizaciones, copias y lo que no hay que hacer nunca.
+Para instalar tu propia copia, guía completa paso a paso en **[docs/DEPLOY.md](docs/DEPLOY.md)**: prueba
+previa en local con la configuración de producción, crear la VM y abrir los puertos en Oracle, descargar el
+código, `.env`, build en la VM (arm64), HTTPS provisional con sslip.io y opcional con un dominio propio en
+Cloudflare, actualizaciones, copias y lo que no hay que hacer nunca.
 
 Resumen (en la VM): `cp .env.example .env && chmod 600 .env`, rellenar, `make deploy`. Para actualizar:
 `make update`.
