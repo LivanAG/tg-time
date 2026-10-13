@@ -106,6 +106,8 @@ class PeriodApiIT extends DomainApiTestSupport {
                 .andExpect(jsonPath("$.maxRemotePct").value(50))
                 .andExpect(jsonPath("$.maxRemoteDaysMonth").doesNotExist())
                 .andExpect(jsonPath("$.openingBalanceMin").value(0))
+                .andExpect(jsonPath("$.countFrom").value("07:00"))      // por defecto, sin enviarlo
+                .andExpect(jsonPath("$.countUntil").value("20:00"))
                 .andExpect(jsonPath("$.intensiveRanges", hasSize(1)))
                 .andExpect(jsonPath("$.intensiveRanges[0].startDate").value("2026-06-15"))
                 .andExpect(jsonPath("$.intensiveRanges[0].endDate").value("2026-09-15"))
@@ -126,6 +128,8 @@ class PeriodApiIT extends DomainApiTestSupport {
         update.remove("preloadHolidays");
         update.put("name", "  Periodo 26-27  ");
         update.put("openingBalanceMin", -90);
+        update.put("countFrom", "07:30");
+        update.put("countUntil", "19:00");
         update.put("intensiveRanges", List.of());   // se ignora en el PUT del periodo
         update.put("version", 0);
         mvc.perform(put("/api/periods/" + id).with(as(user))
@@ -133,6 +137,8 @@ class PeriodApiIT extends DomainApiTestSupport {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.name").value("Periodo 26-27"))
                 .andExpect(jsonPath("$.openingBalanceMin").value(-90))
+                .andExpect(jsonPath("$.countFrom").value("07:30"))
+                .andExpect(jsonPath("$.countUntil").value("19:00"))
                 .andExpect(jsonPath("$.intensiveRanges", hasSize(1)))
                 .andExpect(jsonPath("$.version").value(1));
 
@@ -198,6 +204,13 @@ class PeriodApiIT extends DomainApiTestSupport {
                 .andExpect(jsonPath("$.errors[*].field", hasItem("maxRemotePct")))
                 .andExpect(jsonPath("$.errors[*].field", hasItem("agreementMinutes")))
                 .andExpect(jsonPath("$.errors[*].field", hasItem("normalDayMinutes")));
+
+        Map<String, Object> reversedHours = excelPeriod();
+        reversedHours.put("countFrom", "20:00");
+        reversedHours.put("countUntil", "07:00");
+        postPeriod(user, reversedHours)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors[0].field").value("countUntil"));
 
         Map<String, Object> rangeOutside = excelPeriod();
         rangeOutside.put("intensiveRanges", List.of(Map.of("startDate", "2027-05-20", "endDate", "2027-06-15")));

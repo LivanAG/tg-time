@@ -8,6 +8,11 @@
 // el de casa (el hueco entre ellos no cuenta). La comida mínima solo se aplica si hubo pausa COMIDA.
 // Ubicación: OFICINA todo oficina, CASA todo casa, MIXTO lo trabajado en el tramo de casa (su duración
 // menos lo que se descuenta de las pausas que caen en él) y el resto oficina.
+//
+// Horario computable (countFrom-countUntil, p. ej. 07:00-20:00): se puede fichar fuera de él, pero solo
+// cuenta lo que cae dentro. Tramos y pausas se recortan a ese horario antes de calcular; una pausa que
+// queda fuera no descuenta. La comida mínima se aplica a la comida fichada y solo se descuenta la parte
+// que cae dentro del horario.
 
 import type { BreakType, WorkLocation } from '../api/types'
 import { parseTime } from './time'
@@ -20,6 +25,9 @@ export const BREAKS_OVERLAP = 'BREAKS_OVERLAP'
 export const DUPLICATE_BREAKFAST = 'DUPLICATE_BREAKFAST'
 export const DUPLICATE_LUNCH = 'DUPLICATE_LUNCH'
 export const LUNCH_BELOW_MINIMUM = 'LUNCH_BELOW_MINIMUM'
+export const OUTSIDE_COUNTED_HOURS = 'OUTSIDE_COUNTED_HOURS'
+
+const DAY_MINUTES = 24 * 60
 
 /** Error o aviso del cálculo (CalcIssue del backend). */
 export interface CalcIssue {
@@ -31,6 +39,29 @@ export interface CalcIssue {
 export interface CalcRules {
   breakfastToleranceMin: number
   minLunchMin: number
+  /** Horario computable ("HH:mm"): lo fichado fuera no cuenta. Sin él, cuenta todo. */
+  countFrom?: string | null
+  countUntil?: string | null
+}
+
+/** Horario computable en minutos del día. */
+interface CountedWindow {
+  from: number
+  until: number
+}
+
+function countedWindow(rules: CalcRules): CountedWindow {
+  return { from: parseTime(rules.countFrom) ?? 0, until: parseTime(rules.countUntil) ?? DAY_MINUTES }
+}
+
+/** Minutos de [start, end) que caen dentro del horario computable. */
+function counted(start: number, end: number, window: CountedWindow): number {
+  return Math.max(0, Math.min(end, window.until) - Math.max(start, window.from))
+}
+
+/** 420 → "7:00" (igual que Minutes.format del backend). */
+function hm(minutes: number): string {
+  return `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, '0')}`
 }
 
 export interface CalcBreak {
@@ -238,19 +269,22 @@ export function validateWorkday(input: CalcWorkday, _rules: CalcRules): CalcIssu
 export function calculateWorkday(input: CalcWorkday, rules: CalcRules): WorkdayResult {
   const day = parse(input)
   const daySegments = segments(day)
-  const gross = daySegments.reduce((sum, s) => sum + (s.end - s.start), 0)
+  const window = countedWindow(rules)
+  const gross = daySegments.reduce((sum, s) => sum + counted(s.start, s.end, window), 0)
   let breakfast = 0
   let lunch = 0
+  let lunchRecorded = 0
   let hasLunch = false
   let other = 0
   for (const b of day.breaks) {
-    const duration = (b.end as number) - (b.start as number)
+    const duration = counted(b.start as number, b.end as number, window)
     switch (b.type) {
       case 'DESAYUNO':
         breakfast += duration
         break
       case 'COMIDA':
         lunch += duration
+        lunchRecorded += (b.end as number) - (b.start as number)
         hasLunch = true
         break
       case 'OTRA':
@@ -261,17 +295,20 @@ export function calculateWorkday(input: CalcWorkday, rules: CalcRules): WorkdayR
     }
   }
   const breakfastDeducted = Math.max(0, breakfast - rules.breakfastToleranceMin)
-  const lunchDeducted = hasLunch ? Math.max(lunch, rules.minLunchMin) : 0
+  // La comida mínima vale para la comida fichada; se descuenta lo que cae dentro del horario.
+  const lunchDeducted =
+    hasLunch && lunch > 0 ? Math.max(lunchRecorded, rules.minLunchMin) - (lunchRecorded - lunch) : 0
   const worked = Math.max(0, gross - breakfastDeducted - lunchDeducted - other)
 
   const warnings: CalcIssue[] = []
-  if (hasLunch && lunch < rules.minLunchMin) {
+  if (hasLunch && lunch > 0 && lunchRecorded < rules.minLunchMin) {
     warnings.push({
       code: LUNCH_BELOW_MINIMUM,
       field: 'breaks',
-      message: `La comida dura ${lunch} min: se descuenta el mínimo de ${rules.minLunchMin} min`,
+      message: `La comida dura ${lunchRecorded} min: se descuenta el mínimo de ${rules.minLunchMin} min`,
     })
   }
+  warnings.push(...outsideWarnings(day, daySegments, window))
 
   let remote: number
   switch (day.location) {
@@ -282,7 +319,7 @@ export function calculateWorkday(input: CalcWorkday, rules: CalcRules): WorkdayR
       // Lo trabajado en casa: el tramo menos lo que se descuenta de las pausas que caen en él
       // (solo hay un desayuno y una comida, así que su descuento va entero a su tramo).
       const home = daySegments[1]
-      let homeWorked = home.end - home.start
+      let homeWorked = counted(home.start, home.end, window)
       for (const b of day.breaks) {
         if (contains(home, b)) {
           if (b.type === 'DESAYUNO') {
@@ -290,7 +327,7 @@ export function calculateWorkday(input: CalcWorkday, rules: CalcRules): WorkdayR
           } else if (b.type === 'COMIDA') {
             homeWorked -= lunchDeducted
           } else {
-            homeWorked -= (b.end as number) - (b.start as number)
+            homeWorked -= counted(b.start as number, b.end as number, window)
           }
         }
       }
@@ -312,6 +349,29 @@ export function calculateWorkday(input: CalcWorkday, rules: CalcRules): WorkdayR
     remoteMinutes: remote,
     warnings,
   }
+}
+
+/** Avisos (no impiden guardar) si se fichó antes o después del horario computable. */
+function outsideWarnings(day: ParsedWorkday, daySegments: Segment[], window: CountedWindow): CalcIssue[] {
+  const mixed = day.location === 'MIXTO'
+  const warnings: CalcIssue[] = []
+  const first = daySegments.reduce((a, b) => (b.start < a.start ? b : a))
+  const last = daySegments.reduce((a, b) => (b.end > a.end ? b : a))
+  if (first.start < window.from) {
+    warnings.push({
+      code: OUTSIDE_COUNTED_HOURS,
+      field: !mixed ? 'startTime' : first.location === 'CASA' ? 'homeStart' : 'officeStart',
+      message: `Antes de las ${hm(window.from)} no cuenta: se computa desde las ${hm(window.from)}`,
+    })
+  }
+  if (last.end > window.until) {
+    warnings.push({
+      code: OUTSIDE_COUNTED_HOURS,
+      field: !mixed ? 'endTime' : last.location === 'CASA' ? 'homeEnd' : 'officeEnd',
+      message: `Después de las ${hm(window.until)} no cuenta: se computa hasta las ${hm(window.until)}`,
+    })
+  }
+  return warnings
 }
 
 export interface LiveCalculation {

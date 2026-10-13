@@ -88,7 +88,7 @@ public class WorkdayService {
         WorkPeriod period = periods.resolve(userId, periodId);
         PeriodService.requireDateIn(period, date);
         PeriodRules rules = rulesFactory.rulesFor(period);
-        WorkdayCalculator calculator = new WorkdayCalculator(rules.breakfastToleranceMin(), rules.minLunchMin());
+        WorkdayCalculator calculator = WorkdayCalculator.of(rules);
 
         Location location = request.location() == null ? Location.OFICINA : request.location();
         MixedTimes mixed = new MixedTimes(request.officeStart(), request.officeEnd(), request.homeStart(),
@@ -152,7 +152,8 @@ public class WorkdayService {
     }
 
     private static WorkdayCalculator calculatorFor(WorkPeriod period) {
-        return new WorkdayCalculator(period.getBreakfastToleranceMin(), period.getMinLunchMin());
+        return new WorkdayCalculator(period.getBreakfastToleranceMin(), period.getMinLunchMin(),
+                period.getCountFrom(), period.getCountUntil());
     }
 
     private static boolean sameBreaks(List<WorkdayBreak> current, List<BreakInput> next) {

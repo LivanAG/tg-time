@@ -12,6 +12,7 @@ import {
   liveCalculation,
   LUNCH_BELOW_MINIMUM,
   mixedBounds,
+  OUTSIDE_COUNTED_HOURS,
   SEGMENTS_OVERLAP,
   validateWorkday,
   type CalcBreak,
@@ -125,6 +126,84 @@ describe('calculateWorkday', () => {
     const homeFirst = mixed('10:00', '15:00', '07:00', '09:00')
     expect(mixedBounds(homeFirst.mixed)).toEqual({ startTime: '07:00', endTime: '15:00' })
     expect(calculateWorkday(homeFirst, rules)).toMatchObject({ grossMinutes: 420, officeMinutes: 300, remoteMinutes: 120 })
+  })
+})
+
+// Mismos casos que la sección "horario computable" de WorkdayCalculatorTest.
+describe('calculateWorkday con horario computable 07:00-20:00', () => {
+  const windowed = { ...rules, countFrom: '07:00', countUntil: '20:00' }
+
+  it('se puede fichar antes de las 7 y después de las 20, pero no cuenta', () => {
+    const input = day('06:55', '20:30', br('COMIDA', '14:00', '14:30'))
+    expect(validateWorkday(input, windowed)).toEqual([])
+    const result = calculateWorkday(input, windowed)
+    expect(result.grossMinutes).toBe(13 * 60)
+    expect(result.workedMinutes).toBe(12 * 60 + 30)
+    expect(result.warnings).toEqual([
+      {
+        code: OUTSIDE_COUNTED_HOURS,
+        field: 'startTime',
+        message: 'Antes de las 7:00 no cuenta: se computa desde las 7:00',
+      },
+      {
+        code: OUTSIDE_COUNTED_HOURS,
+        field: 'endTime',
+        message: 'Después de las 20:00 no cuenta: se computa hasta las 20:00',
+      },
+    ])
+  })
+
+  it('un día dentro del horario no cambia', () => {
+    const input = day('07:00', '20:00', br('DESAYUNO', '10:00', '10:25'), br('COMIDA', '14:00', '14:20'))
+    expect(calculateWorkday(input, windowed)).toEqual(calculateWorkday(input, rules))
+  })
+
+  it('las pausas fuera del horario no descuentan', () => {
+    const result = calculateWorkday(
+      day('06:00', '21:00', br('DESAYUNO', '06:30', '06:55'), br('OTRA', '20:10', '20:20')),
+      windowed,
+    )
+    expect(result.breakfastDeductedMinutes).toBe(0)
+    expect(result.otherBreakMinutes).toBe(0)
+    expect(result.workedMinutes).toBe(13 * 60)
+  })
+
+  it('una pausa que cruza el límite solo descuenta su parte dentro', () => {
+    const result = calculateWorkday(
+      day('06:30', '20:30', br('DESAYUNO', '06:40', '07:30'), br('COMIDA', '19:50', '20:20')),
+      windowed,
+    )
+    expect(result.breakfastDeductedMinutes).toBe(10)
+    expect(result.lunchDeductedMinutes).toBe(10)
+    expect(result.workedMinutes).toBe(13 * 60 - 20)
+  })
+
+  it('una comida corta que cruza el límite cobra la mínima dentro del horario', () => {
+    const result = calculateWorkday(day('08:00', '20:30', br('COMIDA', '19:50', '20:05')), windowed)
+    expect(result.lunchDeductedMinutes).toBe(25)
+    expect(result.workedMinutes).toBe(12 * 60 - 25)
+    expect(result.warnings.map((w) => w.code)).toEqual([LUNCH_BELOW_MINIMUM, OUTSIDE_COUNTED_HOURS])
+  })
+
+  it('una comida entera fuera del horario no descuenta nada', () => {
+    const result = calculateWorkday(day('08:00', '21:00', br('COMIDA', '20:15', '20:30')), windowed)
+    expect(result.lunchDeductedMinutes).toBe(0)
+    expect(result.workedMinutes).toBe(12 * 60)
+  })
+
+  it('un día entero fuera del horario cuenta 0', () => {
+    const result = calculateWorkday(day('20:15', '22:00'), windowed)
+    expect(result.workedMinutes).toBe(0)
+    expect(result.warnings.map((w) => w.field)).toEqual(['endTime'])
+  })
+
+  it('en un día mixto recorta cada tramo y mantiene el reparto oficina/casa', () => {
+    const result = calculateWorkday(mixed('06:30', '14:00', '15:00', '21:00', br('OTRA', '20:15', '20:30')), windowed)
+    expect(result.grossMinutes).toBe(12 * 60)
+    expect(result.workedMinutes).toBe(12 * 60)
+    expect(result.officeMinutes).toBe(7 * 60)
+    expect(result.remoteMinutes).toBe(5 * 60)
+    expect(result.warnings.map((w) => w.field)).toEqual(['officeStart', 'homeEnd'])
   })
 })
 

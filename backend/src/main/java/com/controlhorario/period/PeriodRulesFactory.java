@@ -33,7 +33,8 @@ public class PeriodRulesFactory {
         }
         return new PeriodRules(period.getStartDate(), period.getEndDate(), period.getAgreementMinutes(),
                 period.getVacationDays(), period.getNormalDayMinutes(), period.getIntensiveDayMinutes(),
-                period.getBreakfastToleranceMin(), period.getMinLunchMin(), period.getRoundingStepMin(),
+                period.getBreakfastToleranceMin(), period.getMinLunchMin(), period.getCountFrom(),
+                period.getCountUntil(), period.getRoundingStepMin(),
                 period.getMaxRemotePct(), period.getOpeningBalanceMin(),
                 intensiveRanges.findByPeriodIdOrderByStartDate(period.getId()).stream()
                         .map(r -> new DateRange(r.getStartDate(), r.getEndDate()))

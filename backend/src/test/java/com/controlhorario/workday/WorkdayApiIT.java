@@ -240,6 +240,24 @@ class WorkdayApiIT extends DomainApiTestSupport {
     }
 
     @Test
+    void onlyTheCountedHoursOfThePeriodAreCounted() throws Exception {
+        User user = newUser();
+        createExcelPeriod(user);   // horario computable por defecto: 07:00-20:00
+        Map<String, Object> longDay = referenceDay();
+        longDay.put("startTime", "06:55");
+        longDay.put("endTime", "20:30");
+        longDay.put("breaks", List.of());
+        putWorkday(user, MAY_26, longDay)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.startTime").value("06:55"))   // se guarda lo fichado
+                .andExpect(jsonPath("$.endTime").value("20:30"))
+                .andExpect(jsonPath("$.totals.workedMinutes").value(13 * 60))
+                .andExpect(jsonPath("$.warnings[0].code").value("OUTSIDE_COUNTED_HOURS"))
+                .andExpect(jsonPath("$.warnings[0].field").value("startTime"))
+                .andExpect(jsonPath("$.warnings[1].field").value("endTime"));
+    }
+
+    @Test
     void listsGetsAndDeletesWorkdays() throws Exception {
         User user = newUser();
         createExcelPeriod(user);

@@ -115,6 +115,9 @@ export interface PeriodDto {
   roundingStepMin: number
   maxRemotePct: number
   openingBalanceMin: number
+  /** Horario computable ("HH:mm"): lo fichado antes de countFrom o después de countUntil no cuenta. */
+  countFrom: string
+  countUntil: string
   intensiveRanges: IntensiveRangeDto[]
   /** Periodo con el que trabaja la app (selector global). La API marca exactamente uno si hay alguno. */
   selected: boolean

@@ -29,7 +29,8 @@ Fuente de verdad para backend y frontend. Todo cuelga de `/api`. Salvo `/api/aut
   (bloqueo optimista o duplicado), 413 fichero grande, 429 rate limit (con cabecera `Retry-After`).
 
 `IssueDto` (avisos de cálculo): `{ "code": "LUNCH_BELOW_MINIMUM", "field": "breaks" | null, "message": "..." }`.
-Códigos: `LUNCH_BELOW_MINIMUM`, `MISSING_RECORD`, `REMOTE_PCT_EXCEEDED`, `VACATION_OVERPLANNED`.
+Códigos: `LUNCH_BELOW_MINIMUM`, `OUTSIDE_COUNTED_HOURS`, `MISSING_RECORD`, `REMOTE_PCT_EXCEEDED`,
+`VACATION_OVERPLANNED`.
 
 ---
 
@@ -98,11 +99,20 @@ PeriodDto {
   "normalDayMinutes": 480, "intensiveDayMinutes": 420,
   "breakfastToleranceMin": 20, "minLunchMin": 30, "roundingStepMin": 15,
   "maxRemotePct": 50, "openingBalanceMin": 0,
+  "countFrom": "07:00", "countUntil": "20:00",
   "intensiveRanges": [ { "startDate": "2026-06-15", "endDate": "2026-09-15" } ],
   "selected": true,
   "version": 0
 }
 ```
+
+**Horario computable** (`countFrom`-`countUntil`, `"HH:mm"`, por defecto 07:00-20:00): se puede fichar a
+cualquier hora y se guarda lo fichado, pero en los cálculos solo cuenta lo que cae dentro. Los tramos y las
+pausas se recortan a ese horario (una pausa que queda fuera no descuenta; la comida mínima se aplica a la
+comida fichada y solo se descuenta la parte de dentro). Si se fichó antes o después, el día lleva el aviso
+`OUTSIDE_COUNTED_HOURS` (campo `startTime`/`endTime`, o `officeStart`/`homeStart`/`officeEnd`/`homeEnd` en
+un día mixto). En el alta y la modificación son opcionales (sin ellos: 07:00-20:00 al crear, sin cambios
+al modificar); `countFrom` posterior o igual a `countUntil` → 400 (`field: "countUntil"`).
 
 **Cada periodo tiene sus propios fichajes y ausencias**, así que los periodos pueden solaparse (p. ej. uno
 de pruebas junto al real). Las rutas de `/api/workdays` y `/api/absences` aceptan `?periodId=uuid`; sin él

@@ -304,7 +304,9 @@ public final class ExcelMonthWriter {
         text(note, COL_DATE, s.workingDays() + " días laborables (" + s.normalDays() + " a jornada normal, "
                 + s.intensiveDays() + " a intensiva): " + Minutes.format(s.calendarMinutes()) + " de jornada. "
                 + "La diferencia y el saldo se calculan con las horas sin redondear; el redondeado (tramos de "
-                + rules.roundingStepMin() + " min) es lo que se imputa. «Hasta hoy» cuenta los días ya pasados.",
+                + rules.roundingStepMin() + " min) es lo que se imputa. Solo cuenta lo trabajado entre las "
+                + hhmm(rules.countFrom()) + " y las " + hhmm(rules.countUntil())
+                + ". «Hasta hoy» cuenta los días ya pasados.",
                 styles.footnote());
         sheet.addMergedRegion(new CellRangeAddress(noteRow, noteRow, COL_DATE, COL_NOTES));
     }

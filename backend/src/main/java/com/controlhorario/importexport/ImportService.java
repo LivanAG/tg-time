@@ -143,7 +143,7 @@ public class ImportService {
         WorkPeriod period = resolvePeriod(userId, options.periodId(), parsed);
         PeriodRules rules = rulesFactory.rulesFor(period);
         PeriodCalendar calendar = new PeriodCalendar(rules);
-        WorkdayCalculator calculator = new WorkdayCalculator(rules.breakfastToleranceMin(), rules.minLunchMin());
+        WorkdayCalculator calculator = WorkdayCalculator.of(rules);
 
         List<YearMonth> months = parsed.months();
         LocalDate from = months.get(0).atDay(1);

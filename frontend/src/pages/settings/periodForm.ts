@@ -13,7 +13,7 @@ import { formatMinutes, parseDuration } from '../../lib/time'
 /**
  * Formulario de periodo. Los nombres coinciden con los de la API para colocar sus errores junto a
  * cada campo. Las jornadas, el convenio y el saldo inicial se editan como h:mm; tolerancias, redondeo,
- * porcentajes y días, como enteros.
+ * porcentajes y días, como enteros; el horario computable, como horas "HH:mm".
  */
 export interface PeriodFormValues {
   name: string
@@ -28,6 +28,8 @@ export interface PeriodFormValues {
   roundingStepMin: string
   maxRemotePct: string
   openingBalanceMin: string
+  countFrom: string
+  countUntil: string
   intensiveRanges: IntensiveRangeDto[]
   preloadHolidays: boolean
 }
@@ -45,6 +47,8 @@ export const PERIOD_FIELDS = [
   'roundingStepMin',
   'maxRemotePct',
   'openingBalanceMin',
+  'countFrom',
+  'countUntil',
   'intensiveRanges',
   'preloadHolidays',
 ] as const
@@ -63,6 +67,8 @@ export const EXCEL_DEFAULTS: PeriodFormValues = {
   roundingStepMin: '15',
   maxRemotePct: '50',
   openingBalanceMin: '0:00',
+  countFrom: '07:00',
+  countUntil: '20:00',
   intensiveRanges: [{ startDate: '2026-06-15', endDate: '2026-09-15' }],
   preloadHolidays: true,
 }
@@ -81,6 +87,8 @@ export function toPeriodFormValues(period: PeriodDto): PeriodFormValues {
     roundingStepMin: String(period.roundingStepMin),
     maxRemotePct: String(period.maxRemotePct),
     openingBalanceMin: formatMinutes(period.openingBalanceMin),
+    countFrom: period.countFrom.slice(0, 5),
+    countUntil: period.countUntil.slice(0, 5),
     intensiveRanges: period.intensiveRanges.map((r) => ({ ...r })),
     preloadHolidays: true,
   }
@@ -132,6 +140,7 @@ function duration(min: number, max: number, message: string) {
 }
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
+const HOUR = /^\d{2}:\d{2}$/
 
 export const periodSchema = z
   .object({
@@ -150,6 +159,8 @@ export const periodSchema = z
       .string()
       .trim()
       .refine((v) => parseDuration(v) !== null, 'Formato h:mm (puede ser negativo, p. ej. -1:30)'),
+    countFrom: z.string().regex(HOUR, 'Hora no válida'),
+    countUntil: z.string().regex(HOUR, 'Hora no válida'),
     intensiveRanges: z.array(
       z.object({
         startDate: z.string().regex(ISO_DATE, 'Fecha no válida'),
@@ -162,6 +173,10 @@ export const periodSchema = z
     const datesOk = ISO_DATE.test(values.startDate) && ISO_DATE.test(values.endDate)
     if (datesOk && values.startDate >= values.endDate) {
       ctx.addIssue({ code: 'custom', path: ['endDate'], message: 'El fin debe ser posterior al inicio' })
+    }
+    // "HH:mm" se ordena igual como texto que como hora.
+    if (HOUR.test(values.countFrom) && HOUR.test(values.countUntil) && values.countFrom >= values.countUntil) {
+      ctx.addIssue({ code: 'custom', path: ['countUntil'], message: 'Debe ser posterior a «Cuenta desde»' })
     }
     const ranges = values.intensiveRanges
       .map((r, index) => ({ ...r, index }))
@@ -207,6 +222,8 @@ function toBody(values: PeriodFormValues): PeriodParameters {
     roundingStepMin: Number(values.roundingStepMin),
     maxRemotePct: Number(values.maxRemotePct),
     openingBalanceMin: parseDuration(values.openingBalanceMin) ?? 0,
+    countFrom: values.countFrom,
+    countUntil: values.countUntil,
     intensiveRanges: values.intensiveRanges.map((r) => ({ startDate: r.startDate, endDate: r.endDate })),
   }
 }

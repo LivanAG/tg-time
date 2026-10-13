@@ -350,6 +350,24 @@ function PeriodFormDialog({ editing, periods, onClose, onSaved }: PeriodFormDial
           />
         </fieldset>
 
+        <fieldset className="grid gap-4 sm:grid-cols-3">
+          <legend className="mb-2 text-sm font-semibold text-slate-800">Horario computable</legend>
+          <TextField
+            label="Cuenta desde"
+            type="time"
+            hint="Lo fichado antes no cuenta"
+            error={errors.countFrom?.message}
+            {...register('countFrom')}
+          />
+          <TextField
+            label="Cuenta hasta"
+            type="time"
+            hint="Lo fichado después no cuenta"
+            error={errors.countUntil?.message}
+            {...register('countUntil')}
+          />
+        </fieldset>
+
         <fieldset className="space-y-3">
           <legend className="text-sm font-semibold text-slate-800">Jornada intensiva (7 h)</legend>
           {ranges.fields.length === 0 && <p className="text-sm text-slate-500">Sin rangos de intensiva.</p>}

@@ -245,5 +245,15 @@ public class PeriodService {
         period.setRoundingStepMin(p.roundingStepMin());
         period.setMaxRemotePct(p.maxRemotePct());
         period.setOpeningBalanceMin(p.openingBalanceMin() == null ? 0 : p.openingBalanceMin());
+        if (p.countFrom() != null) {
+            period.setCountFrom(p.countFrom());
+        }
+        if (p.countUntil() != null) {
+            period.setCountUntil(p.countUntil());
+        }
+        if (!period.getCountFrom().isBefore(period.getCountUntil())) {
+            throw new ValidationException("countUntil",
+                    "La hora hasta la que se cuenta debe ser posterior a la hora desde la que se cuenta");
+        }
     }
 }

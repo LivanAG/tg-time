@@ -39,7 +39,7 @@ public final class MonthSummaryService {
     public MonthSummary summarize(PeriodCalendar calendar, YearMonth month, Collection<WorkdayInput> workdays,
             Collection<AbsenceInput> absences, int openingBalanceMinutes, LocalDate today) {
         PeriodRules rules = calendar.rules();
-        WorkdayCalculator calculator = new WorkdayCalculator(rules.breakfastToleranceMin(), rules.minLunchMin());
+        WorkdayCalculator calculator = WorkdayCalculator.of(rules);
         RoundingService rounding = new RoundingService(rules.roundingStepMin());
 
         Map<LocalDate, WorkdayInput> workdayByDate = new HashMap<>();

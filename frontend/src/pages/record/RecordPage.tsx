@@ -60,8 +60,11 @@ function MonthRecord({ month, period }: { month: string; period: PeriodDto }) {
     onSuccess: saveBlob,
   })
 
-  const { breakfastToleranceMin, minLunchMin } = period
-  const rules = useMemo<CalcRules>(() => ({ breakfastToleranceMin, minLunchMin }), [breakfastToleranceMin, minLunchMin])
+  const { breakfastToleranceMin, minLunchMin, countFrom, countUntil } = period
+  const rules = useMemo<CalcRules>(
+    () => ({ breakfastToleranceMin, minLunchMin, countFrom, countUntil }),
+    [breakfastToleranceMin, minLunchMin, countFrom, countUntil],
+  )
   const title = capitalize(formatMonthLong(month))
   const current = monthOf(todayIso())
   const { first, last } = periodMonths(period)

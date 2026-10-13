@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
+import com.controlhorario.calendar.calc.PeriodRules;
 import com.controlhorario.common.calc.CalcIssue;
 import com.controlhorario.common.calc.Minutes;
 import com.controlhorario.workday.BreakType;
@@ -17,6 +18,11 @@ import com.controlhorario.workday.Location;
  * de casa (el hueco entre ellos no cuenta). La comida mínima solo se aplica si hubo pausa COMIDA.
  * Ubicación: OFICINA todo oficina, CASA todo casa, MIXTO lo trabajado en el tramo de casa (su duración
  * menos lo que se descuenta de las pausas que caen en él) y el resto oficina.
+ * <p>
+ * <b>Horario computable</b> ({@code countFrom}-{@code countUntil}, p. ej. 07:00-20:00): se puede fichar
+ * fuera de él, pero solo cuenta lo que cae dentro. Tramos y pausas se recortan a ese horario antes de
+ * calcular; una pausa que queda fuera no descuenta. La comida mínima se aplica a la comida fichada y
+ * solo se descuenta la parte que cae dentro del horario.
  */
 public final class WorkdayCalculator {
 
@@ -28,6 +34,9 @@ public final class WorkdayCalculator {
     public static final String DUPLICATE_BREAKFAST = "DUPLICATE_BREAKFAST";
     public static final String DUPLICATE_LUNCH = "DUPLICATE_LUNCH";
     public static final String LUNCH_BELOW_MINIMUM = "LUNCH_BELOW_MINIMUM";
+    public static final String OUTSIDE_COUNTED_HOURS = "OUTSIDE_COUNTED_HOURS";
+
+    private static final int DAY_MINUTES = 24 * 60;
 
     /** Tramo trabajado del día, en un sitio. */
     private record Segment(Location location, LocalTime start, LocalTime end) {
@@ -39,10 +48,27 @@ public final class WorkdayCalculator {
 
     private final int breakfastToleranceMin;
     private final int minLunchMin;
+    /** Horario computable en minutos del día; sin límites, 0-1440. */
+    private final int countFromMin;
+    private final int countUntilMin;
 
+    /** Sin horario computable: cuenta todo lo fichado. */
     public WorkdayCalculator(int breakfastToleranceMin, int minLunchMin) {
+        this(breakfastToleranceMin, minLunchMin, null, null);
+    }
+
+    /** {@code countFrom}/{@code countUntil} null = sin límite por ese lado. */
+    public WorkdayCalculator(int breakfastToleranceMin, int minLunchMin, LocalTime countFrom, LocalTime countUntil) {
         this.breakfastToleranceMin = breakfastToleranceMin;
         this.minLunchMin = minLunchMin;
+        this.countFromMin = countFrom == null ? 0 : Minutes.of(countFrom);
+        this.countUntilMin = countUntil == null ? DAY_MINUTES : Minutes.of(countUntil);
+    }
+
+    /** Calculadora con las reglas del periodo (tolerancia, comida mínima y horario computable). */
+    public static WorkdayCalculator of(PeriodRules rules) {
+        return new WorkdayCalculator(rules.breakfastToleranceMin(), rules.minLunchMin(), rules.countFrom(),
+                rules.countUntil());
     }
 
     /** Errores que impiden guardar el día. Lista vacía si es válido. */
@@ -134,34 +160,44 @@ public final class WorkdayCalculator {
         return List.of(new Segment(input.location(), input.start(), input.end()));
     }
 
+    /** Minutos de [start, end) que caen dentro del horario computable. */
+    private int counted(LocalTime start, LocalTime end) {
+        return Math.max(0, Math.min(Minutes.of(end), countUntilMin) - Math.max(Minutes.of(start), countFromMin));
+    }
+
     /** Totales del día. Supone una entrada válida (ver {@link #validate}). */
     public WorkdayResult calculate(WorkdayInput input) {
         List<Segment> segments = segments(input);
-        int gross = segments.stream().mapToInt(s -> Minutes.between(s.start(), s.end())).sum();
+        int gross = segments.stream().mapToInt(s -> counted(s.start(), s.end())).sum();
         int breakfast = 0;
         int lunch = 0;
+        int lunchRecorded = 0;
         boolean hasLunch = false;
         int other = 0;
         for (BreakInput b : input.breaks()) {
-            int duration = Minutes.between(b.start(), b.end());
+            int duration = counted(b.start(), b.end());
             switch (b.type()) {
                 case DESAYUNO -> breakfast += duration;
                 case COMIDA -> {
                     lunch += duration;
+                    lunchRecorded += Minutes.between(b.start(), b.end());
                     hasLunch = true;
                 }
                 case OTRA -> other += duration;
             }
         }
         int breakfastDeducted = Math.max(0, breakfast - breakfastToleranceMin);
-        int lunchDeducted = hasLunch ? Math.max(lunch, minLunchMin) : 0;
+        // La comida mínima vale para la comida fichada; se descuenta lo que cae dentro del horario.
+        int lunchDeducted = hasLunch && lunch > 0
+                ? Math.max(lunchRecorded, minLunchMin) - (lunchRecorded - lunch) : 0;
         int worked = Math.max(0, gross - breakfastDeducted - lunchDeducted - other);
 
         List<CalcIssue> warnings = new ArrayList<>();
-        if (hasLunch && lunch < minLunchMin) {
+        if (hasLunch && lunch > 0 && lunchRecorded < minLunchMin) {
             warnings.add(new CalcIssue(LUNCH_BELOW_MINIMUM, "breaks",
-                    "La comida dura " + lunch + " min: se descuenta el mínimo de " + minLunchMin + " min"));
+                    "La comida dura " + lunchRecorded + " min: se descuenta el mínimo de " + minLunchMin + " min"));
         }
+        warnings.addAll(outsideWarnings(input, segments));
 
         int remote = switch (input.location()) {
             case OFICINA -> 0;
@@ -170,13 +206,13 @@ public final class WorkdayCalculator {
                 // Lo trabajado en casa: el tramo menos lo que se descuenta de las pausas que caen en él
                 // (solo hay un desayuno y una comida, así que su descuento va entero a su tramo).
                 Segment home = segments.get(1);
-                int homeWorked = Minutes.between(home.start(), home.end());
+                int homeWorked = counted(home.start(), home.end());
                 for (BreakInput b : input.breaks()) {
                     if (home.contains(b)) {
                         homeWorked -= switch (b.type()) {
                             case DESAYUNO -> breakfastDeducted;
                             case COMIDA -> lunchDeducted;
-                            case OTRA -> Minutes.between(b.start(), b.end());
+                            case OTRA -> counted(b.start(), b.end());
                         };
                     }
                 }
@@ -185,5 +221,26 @@ public final class WorkdayCalculator {
         };
         return new WorkdayResult(gross, breakfast, breakfastDeducted, lunch, lunchDeducted, other, worked,
                 worked - remote, remote, List.copyOf(warnings));
+    }
+
+    /** Avisos (no impiden guardar) si se fichó antes o después del horario computable. */
+    private List<CalcIssue> outsideWarnings(WorkdayInput input, List<Segment> segments) {
+        boolean mixed = input.location() == Location.MIXTO;
+        List<CalcIssue> warnings = new ArrayList<>();
+        Segment first = segments.stream().min(Comparator.comparing(Segment::start)).orElseThrow();
+        Segment last = segments.stream().max(Comparator.comparing(Segment::end)).orElseThrow();
+        if (Minutes.of(first.start()) < countFromMin) {
+            String field = !mixed ? "startTime" : first.location() == Location.CASA ? "homeStart" : "officeStart";
+            warnings.add(new CalcIssue(OUTSIDE_COUNTED_HOURS, field,
+                    "Antes de las " + Minutes.format(countFromMin) + " no cuenta: se computa desde las "
+                            + Minutes.format(countFromMin)));
+        }
+        if (Minutes.of(last.end()) > countUntilMin) {
+            String field = !mixed ? "endTime" : last.location() == Location.CASA ? "homeEnd" : "officeEnd";
+            warnings.add(new CalcIssue(OUTSIDE_COUNTED_HOURS, field,
+                    "Después de las " + Minutes.format(countUntilMin) + " no cuenta: se computa hasta las "
+                            + Minutes.format(countUntilMin)));
+        }
+        return warnings;
     }
 }

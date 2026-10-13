@@ -38,6 +38,9 @@ Todo se calcula en minutos enteros a partir de los fichajes; no se guarda ningú
 - **Día:** `trabajado = (salida − entrada) − max(0, desayuno − 20 min) − max(comida, 30 min) − otras pausas`.
   Un día **mixto** tiene dos tramos (oficina y casa, cada uno con su entrada y su salida): cuenta la suma
   de los dos y el hueco entre ellos no se trabaja.
+- **Horario computable** (por periodo, 07:00-20:00 por defecto): se puede fichar antes o después, pero solo
+  cuenta el tiempo dentro de ese horario (una entrada a las 6:55 cuenta desde las 7:00; una salida a las
+  20:30, hasta las 20:00).
 - **Redondeo a 15 min sin deriva:** se redondea el acumulado del mes y cada día recibe la diferencia.
 - **Mes:** teóricas (laborables sin ausencia, medio día = mitad), hechas, diferencia **con signo**,
   saldo acumulado, vacaciones, puentes recuperables y teletrabajo (el límite es solo el %; los días en

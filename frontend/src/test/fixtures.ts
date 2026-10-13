@@ -46,6 +46,8 @@ export const period: PeriodDto = {
   roundingStepMin: 15,
   maxRemotePct: 50,
   openingBalanceMin: 0,
+  countFrom: '07:00',
+  countUntil: '20:00',
   intensiveRanges: [{ startDate: '2026-06-15', endDate: '2026-09-15' }],
   selected: true,
   version: 0,

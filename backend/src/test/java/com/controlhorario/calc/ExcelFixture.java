@@ -144,7 +144,7 @@ public final class ExcelFixture {
         holidays.put(LocalDate.of(2027, 3, 26), "Viernes Santo");
         int opening = (int) overrides.getOrDefault("openingBalanceMin", 0);
         return new PeriodRules(LocalDate.of(2026, 5, 26), LocalDate.of(2027, 5, 25), 1760 * 60, 23, 8 * 60, 7 * 60,
-                20, 30, 15, 50, opening,
+                20, 30, LocalTime.of(7, 0), LocalTime.of(20, 0), 15, 50, opening,
                 List.of(new DateRange(LocalDate.of(2026, 6, 15), LocalDate.of(2026, 9, 15))), holidays);
     }
 

@@ -135,6 +135,98 @@ class WorkdayCalculatorTest {
                 WorkdayResult::officeMinutes, WorkdayResult::remoteMinutes).containsExactly(420, 300, 120);
     }
 
+    // ------------------------------------------------------------------ horario computable 07:00-20:00
+
+    private final WorkdayCalculator windowed = new WorkdayCalculator(20, 30, t("07:00"), t("20:00"));
+
+    @Test
+    void beforeSevenAndAfterEightPmCanBeRecordedButDoNotCount() {
+        // Fichado 06:55-20:30: cuenta 07:00-20:00 (13 h) menos la comida.
+        WorkdayInput input = day("06:55", "20:30", br(BreakType.COMIDA, "14:00", "14:30"));
+        assertThat(windowed.validate(input)).isEmpty();
+
+        WorkdayResult result = windowed.calculate(input);
+        assertThat(result.grossMinutes()).isEqualTo(13 * 60);
+        assertThat(result.workedMinutes()).isEqualTo(12 * 60 + 30);
+        assertThat(result.warnings()).extracting(CalcIssue::code).containsOnly(WorkdayCalculator.OUTSIDE_COUNTED_HOURS);
+        assertThat(result.warnings()).extracting(CalcIssue::field).containsExactly("startTime", "endTime");
+        assertThat(result.warnings()).extracting(CalcIssue::message).containsExactly(
+                "Antes de las 7:00 no cuenta: se computa desde las 7:00",
+                "Después de las 20:00 no cuenta: se computa hasta las 20:00");
+    }
+
+    @Test
+    void aDayInsideTheWindowIsNotAffected() {
+        WorkdayInput input = day("07:00", "20:00",
+                br(BreakType.DESAYUNO, "10:00", "10:25"), br(BreakType.COMIDA, "14:00", "14:20"));
+        assertThat(windowed.calculate(input)).isEqualTo(calculator.calculate(input));
+    }
+
+    @Test
+    void breaksOutsideTheWindowDoNotDeduct() {
+        WorkdayResult result = windowed.calculate(day("06:00", "21:00",
+                br(BreakType.DESAYUNO, "06:30", "06:55"), br(BreakType.OTRA, "20:10", "20:20")));
+
+        assertThat(result.breakfastDeductedMinutes()).isZero();
+        assertThat(result.otherBreakMinutes()).isZero();
+        assertThat(result.workedMinutes()).isEqualTo(13 * 60);
+    }
+
+    @Test
+    void aBreakThatCrossesTheLimitOnlyDeductsItsCountedPart() {
+        // Desayuno 06:40-07:30: cuentan 30 min → 30 - 20 de tolerancia = 10.
+        // Comida 19:50-20:20 (30 min, la mínima): solo 19:50-20:00 cae dentro → 10.
+        WorkdayResult result = windowed.calculate(day("06:30", "20:30",
+                br(BreakType.DESAYUNO, "06:40", "07:30"), br(BreakType.COMIDA, "19:50", "20:20")));
+
+        assertThat(result.grossMinutes()).isEqualTo(13 * 60);
+        assertThat(result.breakfastDeductedMinutes()).isEqualTo(10);
+        assertThat(result.lunchDeductedMinutes()).isEqualTo(10);
+        assertThat(result.workedMinutes()).isEqualTo(13 * 60 - 20);
+    }
+
+    @Test
+    void aShortLunchCrossingTheLimitChargesTheMinimumInsideTheWindow() {
+        // Comida 19:50-20:05 (15 min): se cobran los 30 de la mínima menos los 5 que caen fuera = 25.
+        WorkdayResult result = windowed.calculate(day("08:00", "20:30", br(BreakType.COMIDA, "19:50", "20:05")));
+
+        assertThat(result.lunchDeductedMinutes()).isEqualTo(25);
+        assertThat(result.workedMinutes()).isEqualTo(12 * 60 - 25);
+        assertThat(result.warnings()).extracting(CalcIssue::code).containsExactly(
+                WorkdayCalculator.LUNCH_BELOW_MINIMUM, WorkdayCalculator.OUTSIDE_COUNTED_HOURS);
+    }
+
+    @Test
+    void aLunchEntirelyOutsideTheWindowDeductsNothing() {
+        WorkdayResult result = windowed.calculate(day("08:00", "21:00", br(BreakType.COMIDA, "20:15", "20:30")));
+
+        assertThat(result.lunchDeductedMinutes()).isZero();
+        assertThat(result.workedMinutes()).isEqualTo(12 * 60);
+        assertThat(result.warnings()).extracting(CalcIssue::code)
+                .containsExactly(WorkdayCalculator.OUTSIDE_COUNTED_HOURS);
+    }
+
+    @Test
+    void aDayEntirelyOutsideTheWindowCountsZero() {
+        WorkdayResult result = windowed.calculate(day("20:15", "22:00"));
+
+        assertThat(result.workedMinutes()).isZero();
+        assertThat(result.warnings()).extracting(CalcIssue::field).containsExactly("endTime");
+    }
+
+    @Test
+    void mixedDayClipsEachSegmentAndKeepsTheRemoteSplit() {
+        // Oficina 06:30-14:00 (cuenta desde las 7: 7 h) y casa 15:00-21:00 (cuenta hasta las 20: 5 h).
+        WorkdayResult result = windowed.calculate(mixed("06:30", "14:00", "15:00", "21:00",
+                br(BreakType.OTRA, "20:15", "20:30")));
+
+        assertThat(result.grossMinutes()).isEqualTo(12 * 60);
+        assertThat(result.workedMinutes()).isEqualTo(12 * 60);
+        assertThat(result.officeMinutes()).isEqualTo(7 * 60);
+        assertThat(result.remoteMinutes()).isEqualTo(5 * 60);
+        assertThat(result.warnings()).extracting(CalcIssue::field).containsExactly("officeStart", "homeEnd");
+    }
+
     @Test
     void validatesTimesBreaksAndMixedSegments() {
         assertThat(codes(day("16:00", "08:00"))).containsExactly(WorkdayCalculator.END_BEFORE_START);

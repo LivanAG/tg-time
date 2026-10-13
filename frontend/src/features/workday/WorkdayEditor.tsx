@@ -61,7 +61,12 @@ export function WorkdayEditor({ date, onClose }: WorkdayEditorProps) {
 
   const breakfastToleranceMin = period?.breakfastToleranceMin ?? DEFAULT_RULES.breakfastToleranceMin
   const minLunchMin = period?.minLunchMin ?? DEFAULT_RULES.minLunchMin
-  const rules = useMemo<CalcRules>(() => ({ breakfastToleranceMin, minLunchMin }), [breakfastToleranceMin, minLunchMin])
+  const countFrom = period?.countFrom ?? null
+  const countUntil = period?.countUntil ?? null
+  const rules = useMemo<CalcRules>(
+    () => ({ breakfastToleranceMin, minLunchMin, countFrom, countUntil }),
+    [breakfastToleranceMin, minLunchMin, countFrom, countUntil],
+  )
 
   const handleConflict = () => {
     setNotice(CONFLICT_MESSAGE)

@@ -1,6 +1,7 @@
 package com.controlhorario.period;
 
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.List;
 
 import jakarta.validation.Valid;
@@ -9,6 +10,8 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
+
+import com.fasterxml.jackson.annotation.JsonFormat;
 
 /**
  * Alta de un periodo: {@code PeriodDto} sin id ni versión, con los rangos de intensiva iniciales y
@@ -68,6 +71,10 @@ public record PeriodCreateRequest(
         @Min(value = -PeriodService.MAX_AGREEMENT_MINUTES, message = "El saldo inicial no es válido")
         @Max(value = PeriodService.MAX_AGREEMENT_MINUTES, message = "El saldo inicial no es válido")
         Integer openingBalanceMin,
+
+        @JsonFormat(pattern = "HH:mm") LocalTime countFrom,
+
+        @JsonFormat(pattern = "HH:mm") LocalTime countUntil,
 
         List<@Valid IntensiveRangeDto> intensiveRanges,
 

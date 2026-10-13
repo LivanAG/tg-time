@@ -2,6 +2,7 @@ package com.controlhorario.period;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.UUID;
 
 import jakarta.persistence.Column;
@@ -17,6 +18,10 @@ import org.hibernate.annotations.UuidGenerator;
 @Entity
 @Table(name = "work_periods")
 public class WorkPeriod {
+
+    /** Horario computable por defecto: solo cuenta lo trabajado entre las 07:00 y las 20:00. */
+    public static final LocalTime DEFAULT_COUNT_FROM = LocalTime.of(7, 0);
+    public static final LocalTime DEFAULT_COUNT_UNTIL = LocalTime.of(20, 0);
 
     @Id
     @GeneratedValue
@@ -62,6 +67,12 @@ public class WorkPeriod {
     @Column(name = "opening_balance_min", nullable = false)
     private int openingBalanceMin;
 
+    @Column(name = "count_from", nullable = false)
+    private LocalTime countFrom = DEFAULT_COUNT_FROM;
+
+    @Column(name = "count_until", nullable = false)
+    private LocalTime countUntil = DEFAULT_COUNT_UNTIL;
+
     /** Solo se cambia con {@link WorkPeriodRepository#clearSelected} / {@code markSelected} (sin tocar la versión). */
     @Column(name = "selected", nullable = false, insertable = false, updatable = false)
     private boolean selected;
@@ -103,6 +114,10 @@ public class WorkPeriod {
     public void setMaxRemotePct(int maxRemotePct) { this.maxRemotePct = maxRemotePct; }
     public int getOpeningBalanceMin() { return openingBalanceMin; }
     public void setOpeningBalanceMin(int openingBalanceMin) { this.openingBalanceMin = openingBalanceMin; }
+    public LocalTime getCountFrom() { return countFrom; }
+    public void setCountFrom(LocalTime countFrom) { this.countFrom = countFrom; }
+    public LocalTime getCountUntil() { return countUntil; }
+    public void setCountUntil(LocalTime countUntil) { this.countUntil = countUntil; }
     public boolean isSelected() { return selected; }
     public Long getVersion() { return version; }
     public void setVersion(Long version) { this.version = version; }
